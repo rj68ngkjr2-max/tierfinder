@@ -2,6 +2,8 @@
 
 Mobile Tiervermittlungs-Demo für ein Hochschulprojekt. Die Oberfläche läuft auf GitHub Pages; Anmeldung, Daten und private Tierbilder liegen bei Supabase.
 
+**[App öffnen](https://rj68ngkjr2-max.github.io/tierfinder/)**
+
 ## Auf dem iPhone verwenden
 
 Die veröffentlichte Seite in Safari öffnen, das Teilen-Menü auswählen und **Zum Home-Bildschirm** hinzufügen. Das App-Icon startet die Oberfläche ohne simulierten Handyrahmen. Safe Areas, große Bedienelemente und eine Navigation mit maximal fünf Tabs berücksichtigen die mobile Nutzung. Auch im normalen Browser lässt sich die App verwenden.

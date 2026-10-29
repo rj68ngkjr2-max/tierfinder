@@ -19,7 +19,7 @@ before(async()=>{
  create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb);
  alter table storage.objects enable row level security;`);
  await db.exec(await readFile(new URL('../supabase/migrations/001_core.sql',import.meta.url),'utf8'));
- await db.exec(await readFile(new URL('../supabase/migrations/002_import.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
  }
