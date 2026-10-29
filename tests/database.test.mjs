@@ -19,6 +19,7 @@ before(async()=>{
  create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb);
  alter table storage.objects enable row level security;`);
  await db.exec(await readFile(new URL('../supabase/migrations/001_core.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/003_batch_image_lookup.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -101,6 +102,17 @@ test('new image upload must belong to caller and target organization',async()=>{
 test('import endpoint is inaccessible to authenticated app users',async()=>{
  await db.exec('set role authenticated');try{await rejects(()=>db.query("select public.tier_import('{}')"),'permission denied');}finally{await db.exec('reset role');}
  await rejects(()=>db.query("select public.tier_import('{}')"),'FORBIDDEN');
+});
+test('batched image lookup returns authorized image paths and handles missing images',async()=>{
+ const pictured=(await db.query("select a.animal_id,i.storage_path from app.animals a join app.animal_images i on i.image_id=a.primary_image_id where a.name='Luna'")).rows[0];
+ const payload={animal_ids:[pictured.animal_id,'draft','dog']};
+ const viewer=await rpc('user','images',payload);
+ assert.equal(viewer.length,2);assert.equal(viewer.some(a=>a.animal_id==='draft'),false);
+ assert.equal(viewer.find(a=>a.animal_id===pictured.animal_id).image.path,pictured.storage_path);
+ assert.equal(viewer.find(a=>a.animal_id==='dog').image,null);
+ const admin=await rpc('admin','images',payload);
+ assert.equal(admin.length,3);assert.equal(admin.find(a=>a.animal_id==='dog').image,null);
+ assert.deepEqual(await rpc('user','images',{animal_ids:[]}),[]);
 });
 test('malformed status and preference values are rejected',async()=>{
  await rejects(()=>rpc('user','saveProfile',{alias:'Demo',species:['ADMIN']}),'VALIDATION_ERROR');
