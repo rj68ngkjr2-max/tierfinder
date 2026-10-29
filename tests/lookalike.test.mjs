@@ -4,7 +4,7 @@ import {compareLookalike,chooseCandidates,parseMatch,imageBytes,geminiRequest,IM
 const jpeg=new Uint8Array([255,216,255,0,0]);
 const reference={data:Buffer.from(jpeg).toString('base64'),mime_type:'image/jpeg',generated_demo_image:true,include_seen:true};
 const animal=(i,species='DOG')=>({animal_id:'a'+i,species,status:'AVAILABLE',has_image:true,image_version:'v1'});
-const answer=(id='a0',status='MATCH')=>({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({status,animal_id:id})}]}}]});
+const answer=(id='a0',status='MATCH',reason=status==='MATCH'?'NONE':'REFERENCE_UNCLEAR')=>({candidates:[{finishReason:'STOP',content:{parts:[{text:JSON.stringify({status,animal_id:id,reason})}]}}]});
 function setup(pool=[animal(0)],overrides={}){
  const calls={reserves:0,requests:[],batches:[],candidateReads:0};
  const dependencies={key:'test-key',model:'gemini-test',freeTier:'true',
@@ -51,8 +51,8 @@ test('made-up IDs, malformed JSON, blocked and truncated outputs are rejected',(
  assert.throws(()=>parseMatch({candidates:[]},['a0']),/AI_INVALID/);
  assert.throws(()=>parseMatch({promptFeedback:{blockReason:'SAFETY'}},['a0']),/AI_IMAGE_UNSUITABLE/);
  assert.throws(()=>parseMatch({candidates:[{...answer().candidates[0],finishReason:'MAX_TOKENS'}]},['a0']),/AI_INVALID/);
- assert.deepEqual(parseMatch(answer('','NO_MATCH'),['a0']),{status:'NO_MATCH',animal_id:''});
- assert.deepEqual(parseMatch(answer('NONE','NO_MATCH'),['a0']),{status:'NO_MATCH',animal_id:''});
+ assert.throws(()=>parseMatch(answer('','NO_MATCH'),['a0']),/AI_INVALID/);
+ assert.deepEqual(parseMatch(answer('NONE','NO_MATCH'),['a0']),{status:'NO_MATCH',animal_id:'',reason:'REFERENCE_UNCLEAR'});
 });
 test('changed image or availability after comparison never produces stale result',async()=>{
  let reads=0;const fixture=setup([animal(0)],{candidates:async()=>++reads===3?[{...animal(0),image_version:'v2'}]:[animal(0)]});
@@ -103,4 +103,13 @@ test('quota, configuration and invalid outputs are never retried',async()=>{
   let requests=0;const fixture=setup([animal(0)],{fetcher:async()=>{requests++;return response;}});
   await assert.rejects(()=>compareLookalike(reference,fixture.dependencies));assert.equal(requests,1);assert.equal(fixture.calls.reserves,1);
  }
+});
+
+test('no-match requires a specific image problem, never an unknown or similarity reason',async()=>{
+ for(const reason of ['NO_FACE','MULTIPLE_FACES','REFERENCE_UNCLEAR','ANIMALS_UNCLEAR']){
+  const fixture=setup([animal(0)],{fetcher:async()=>Response.json(answer('NONE','NO_MATCH',reason))});
+  const result=await compareLookalike(reference,fixture.dependencies);assert.equal(result.reason,reason);assert.equal(result.animal,null);
+ }
+ for(const reason of ['NONE','LOW_SIMILARITY','arbitrary'])assert.throws(()=>parseMatch(answer('NONE','NO_MATCH',reason),['a0']),/AI_INVALID/);
+ assert.throws(()=>parseMatch(answer('a0','MATCH','NO_FACE'),['a0']),/AI_INVALID/);
 });

@@ -170,7 +170,7 @@ function renderAi(main){
    try{
     const r=await api('lookalike',{data:image.data,mime_type:image.mime_type,generated_demo_image:true,include_seen:seen.checked});
     if(!current())return;result.replaceChildren();
-    if(r.status==='NO_MATCH'){empty(result,'Noch kein Lookalike gefunden.','Nutze ein gut erkennbares, generiertes Porträt mit genau einem Gesicht. Du kannst auch das Beispielbild ausprobieren.');return;}
+    if(r.status==='NO_MATCH'){const hints={NO_FACE:['Kein Gesicht erkannt.','Gemini hat im Referenzbild kein menschliches Gesicht erkannt. Wähle ein generiertes Personenporträt oder das Beispielbild.'],MULTIPLE_FACES:['Mehrere Gesichter erkannt.','Wähle ein generiertes Porträt mit genau einer Person.'],REFERENCE_UNCLEAR:['Porträt nicht gut erkennbar.','Gemini konnte das Gesicht nicht ausreichend erkennen. Versuche ein größeres, gut beleuchtetes Porträt oder das Beispielbild.'],ANIMALS_UNCLEAR:['Tierfotos nicht auswertbar.','Gemini konnte die Tierfotos dieser Auswahl nicht auswerten. Das liegt nicht an deinem Porträt.']};const hint=hints[r.reason]||['Vergleich nicht auswertbar.','Gemini konnte die Bilder nicht zuverlässig vergleichen. Versuche es mit dem Beispielporträt.'];empty(result,...hint);return;}
     result.append(el('div','eyebrow','Dein Lookalike'),el('p','small','Aus '+r.candidate_count+' verfügbaren Tierfotos ausgewählt.'));
     const c=card(r.animal),actions=el('div','actions');
     actions.append(button('Profil ansehen',()=>openDetails(r.animal.animal_id),'primary'),button('♡ Merken',async b=>{await api('swipe',{animal_id:r.animal.animal_id,decision:'LIKE'});b.textContent='♥ Gemerkt';notice(r.animal.name+' ist in deinen Likes.');},'secondary'));c.body.append(actions);result.append(c.root);
