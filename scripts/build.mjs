@@ -1,4 +1,5 @@
 import {build} from 'esbuild';
+import {createHash} from 'node:crypto';
 import {mkdir,readFile,writeFile,copyFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
@@ -7,5 +8,11 @@ await build({entryPoints:[root+'web/client.js'],bundle:true,format:'iife',target
 for(const name of ['index.html','styles.css','manifest.webmanifest','sw.js','icon.svg','icon-180.png','icon-192.png','icon-512.png'])await copyFile(root+'web/'+name,root+'dist/'+name);
 const code=await readFile(root+'dist/app.js','utf8');
 if(code.includes('google.script.run')||/sb_secret_[A-Za-z0-9_-]{15,}/.test(code))throw Error('Legacy transport or secret in frontend');
+const style=await readFile(root+'dist/styles.css','utf8');
+const worker=await readFile(root+'web/sw.js','utf8');
+const html=await readFile(root+'web/index.html','utf8');
+const revision=createHash('sha256').update(code).update(style).update(worker).update(html).digest('hex').slice(0,12);
+await writeFile(root+'dist/index.html',html.replace('./app.js','./app.js?v='+revision).replace('./styles.css','./styles.css?v='+revision));
+await writeFile(root+'dist/sw.js',worker.replaceAll('__BUILD_REVISION__',revision));
 await writeFile(root+'dist/.nojekyll','');
 console.log('GitHub Pages bundle ready: dist/');

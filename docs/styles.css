@@ -17,5 +17,8 @@ label{display:block;font-size:14px;font-weight:600;margin:18px 0 7px}input:not([
 @media(prefers-reduced-transparency:reduce){#nav,.panel,.more-list,.row{background:white;backdrop-filter:none;-webkit-backdrop-filter:none}.app-overlay{backdrop-filter:none;-webkit-backdrop-filter:none}}
 @media(prefers-contrast:more){:root{--muted:#304e44;--line:#738c80}#nav{background:white;border-color:#738c80}.panel,.row,.more-list{border-color:#738c80}}
 
-/* Installed iOS apps have no browser toolbar; use the stable full height. */
-@media(display-mode:standalone){.app{height:100vh}}
+/* Home Screen: use the layout window, not WebKit's smaller fixed viewport. */
+html.iphone-home,html.iphone-home body{height:var(--home-height,100%)}
+html.iphone-home body{position:absolute;inset:0 auto auto 0}
+.iphone-home .app{position:absolute;inset:0 auto auto 0;height:var(--home-height,100%)}
+.iphone-home #nav{position:absolute}
