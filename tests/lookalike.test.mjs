@@ -21,7 +21,7 @@ test('candidate cap balances species and rejects unavailable or imageless entrie
 test('Gemini request contains real image bytes and constrains IDs',()=>{
  const request=geminiRequest(reference,[{...reference,animal_id:'known'}]);
  assert.equal(request.contents[0].parts.filter(p=>p.inlineData).length,2);
- assert.deepEqual(request.generationConfig.responseSchema.properties.animal_id.enum,['','known']);
+ assert.deepEqual(request.generationConfig.responseSchema.properties.animal_id.enum,['NONE','known']);
 });
 test('full comparison batches 25 images, reserves once and checks availability again',async()=>{
  const {calls,dependencies}=setup(Array.from({length:25},(_,i)=>animal(i)));
@@ -52,6 +52,7 @@ test('made-up IDs, malformed JSON, blocked and truncated outputs are rejected',(
  assert.throws(()=>parseMatch({promptFeedback:{blockReason:'SAFETY'}},['a0']),/AI_IMAGE_UNSUITABLE/);
  assert.throws(()=>parseMatch({candidates:[{...answer().candidates[0],finishReason:'MAX_TOKENS'}]},['a0']),/AI_INVALID/);
  assert.deepEqual(parseMatch(answer('','NO_MATCH'),['a0']),{status:'NO_MATCH',animal_id:''});
+ assert.deepEqual(parseMatch(answer('NONE','NO_MATCH'),['a0']),{status:'NO_MATCH',animal_id:''});
 });
 test('changed image or availability after comparison never produces stale result',async()=>{
  let reads=0;const fixture=setup([animal(0)],{candidates:async()=>++reads===3?[{...animal(0),image_version:'v2'}]:[animal(0)]});
