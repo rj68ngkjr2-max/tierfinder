@@ -70,3 +70,37 @@ test('provider errors map to useful messages without exposing responses or crede
  const fixture=setup([animal(0)],{fetcher:async()=>{throw new DOMException('timeout','TimeoutError');}});
  await assert.rejects(()=>compareLookalike(reference,fixture.dependencies),/AI_TIMEOUT/);
 });
+test('latency settings bound image processing and response size for Flash Lite',()=>{
+ const fast=geminiRequest(reference,[{...reference,animal_id:'known'}],'gemini-3.5-flash-lite');
+ assert.equal(fast.generationConfig.mediaResolution,'MEDIA_RESOLUTION_MEDIUM');
+ assert.equal(fast.generationConfig.maxOutputTokens,256);
+ assert.deepEqual(fast.generationConfig.thinkingConfig,{thinkingLevel:'MINIMAL',includeThoughts:false});
+ const other=geminiRequest(reference,[{...reference,animal_id:'known'}],'gemini-2.5-flash');
+ assert.equal(other.generationConfig.thinkingConfig,undefined);
+});
+
+test('transient errors retry once and reserve each provider request',async()=>{
+ for(const error of ['timeout','503']){
+  let count=0;const fixture=setup([animal(0)],{fetcher:async()=>{
+   if(++count===1){if(error==='timeout')throw new DOMException('timeout','TimeoutError');return new Response('',{status:503});}
+   return Response.json(answer());
+  }});
+  const result=await compareLookalike(reference,fixture.dependencies);
+  assert.equal(result.status,'MATCH');assert.equal(count,2);assert.equal(fixture.calls.reserves,2);
+ }
+});
+test('retry rechecks approval and daily budget before transmitting again',async()=>{
+ for(const code of ['APPROVAL_PENDING','AI_DAILY_LIMIT']){
+  let reserves=0,requests=0;const fixture=setup([animal(0)],{
+   candidates:async(seen,reserve)=>{if(reserve&&++reserves===2)throw Error(code);return [animal(0)];},
+   fetcher:async()=>{requests++;return new Response('',{status:503});}
+  });
+  await assert.rejects(()=>compareLookalike(reference,fixture.dependencies),new RegExp(code));assert.equal(requests,1);
+ }
+});
+test('quota, configuration and invalid outputs are never retried',async()=>{
+ for(const response of [new Response('',{status:429}),new Response('',{status:400}),Response.json(answer('foreign'))]){
+  let requests=0;const fixture=setup([animal(0)],{fetcher:async()=>{requests++;return response;}});
+  await assert.rejects(()=>compareLookalike(reference,fixture.dependencies));assert.equal(requests,1);assert.equal(fixture.calls.reserves,1);
+ }
+});
