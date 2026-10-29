@@ -1,9 +1,9 @@
 import {createClient} from '@supabase/supabase-js';
 import {config} from './config.js';
 import {messages} from './messages.js';
+import {createAuthStorage} from './auth-storage.js';
 
-const memoryStorage=new Map();
-const storage={getItem:k=>{try{return sessionStorage.getItem(k);}catch{return memoryStorage.get(k)||null;}},setItem:(k,v)=>{try{sessionStorage.setItem(k,v);}catch{memoryStorage.set(k,v);}},removeItem:k=>{try{sessionStorage.removeItem(k);}catch{}memoryStorage.delete(k);}};
+const storage=createAuthStorage();
 export const db=createClient(config.url,config.publishableKey,{auth:{storage,persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,flowType:'pkce'}});
 const authErrors={invalid_credentials:'AUTH_FAILED',email_exists:'EMAIL_IN_USE',user_already_exists:'EMAIL_IN_USE',weak_password:'PASSWORD_POLICY',over_request_rate_limit:'RATE_LIMIT',over_email_send_rate_limit:'RATE_LIMIT',email_not_confirmed:'EMAIL_CONFIRMATION',otp_expired:'RESET_INVALID',validation_failed:'VALIDATION_ERROR',user_banned:'NOT_AUTHENTICATED',session_not_found:'NOT_AUTHENTICATED',refresh_token_not_found:'NOT_AUTHENTICATED'};
 function failure(e){
@@ -15,6 +15,7 @@ async function edge(action,payload={}){const {data,error}=await db.functions.inv
 async function signImage(image){if(!image)return null;const {data,error}=await db.storage.from('animal-images').createSignedUrl(image.path,300);if(error)return null;return {...image,url:data.signedUrl};}
 let recovery=false;
 export const backend={
+ get rememberLogin(){return storage.remembered;},
  async ready(){
   const params=new URLSearchParams(location.search),hash=params.get('token_hash');
   if(hash&&params.get('type')==='recovery'){
@@ -29,6 +30,7 @@ export const backend={
   try{
    let result;
    if(action==='login'){
+    storage.setRemember(payload.remember===true);
     const {data,error}=await db.auth.signInWithPassword({email:payload.email.trim().toLowerCase(),password:payload.password});if(error)throw error;
     try{result={token:data.user.id,account:await query('me')};}catch(e){await db.auth.signOut({scope:'local'});throw e;}
    }else if(action==='register'){

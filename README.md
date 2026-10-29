@@ -6,7 +6,7 @@ Mobile Tiervermittlungs-Demo für ein Hochschulprojekt. Die Oberfläche läuft a
 
 ## Auf dem iPhone verwenden
 
-Die veröffentlichte Seite in Safari öffnen, das Teilen-Menü auswählen und **Zum Home-Bildschirm** hinzufügen. Das App-Icon startet die Oberfläche ohne simulierten Handyrahmen. Safe Areas, große Bedienelemente und eine Navigation mit maximal fünf Tabs berücksichtigen die mobile Nutzung. Auch im normalen Browser lässt sich die App verwenden.
+Die veröffentlichte Seite in Safari öffnen, das Teilen-Menü auswählen und **Zum Home-Bildschirm** hinzufügen. Das App-Icon startet die Oberfläche ohne simulierten Handyrahmen. Safe Areas, große Bedienelemente und eine Navigation mit maximal fünf Tabs berücksichtigen die mobile Nutzung. Auch im normalen Browser lässt sich die App verwenden. Mit **Angemeldet bleiben** wird die Supabase-Sitzung auf Wunsch im lokalen Browserspeicher behalten; sonst nur im aktuellen Tab. Abmelden entfernt die gespeicherte Sitzung. Passwörter speichert die App nicht; das Login unterstützt das Ausfüllen durch den Passwortmanager.
 
 ## Funktionen und Regeln
 
