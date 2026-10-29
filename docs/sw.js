@@ -1,6 +1,6 @@
 // Only the public application shell is cached. Supabase requests and user data
 // always use the network and never enter a service-worker cache.
-const VERSION='tierfinder-shell-3';
+const VERSION='tierfinder-shell-4';
 const ASSETS=['./','./index.html','./app.js','./styles.css','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-192.png','./icon-512.png'];
 const STATIC=new Set(ASSETS.map(p=>new URL(p,self.registration.scope).href));
 self.addEventListener('install',event=>event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(ASSETS))));
