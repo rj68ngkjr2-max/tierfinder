@@ -1,11 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {installStandaloneLayout} from '../web/standalone-layout.js';
-function fixture({iphone=true,standalone=true}={}){
+function fixture({iphone=true,standalone=true,height=874,width=402,screen}={}){
  const events={},properties=new Map(),classes=new Set();
  const doc={hidden:false,activeElement:{matches:()=>false},documentElement:{classList:{toggle:(k,on)=>on?classes.add(k):classes.delete(k)},style:{setProperty:(k,v)=>properties.set(k,v)}},addEventListener:(k,v)=>events[k]=v};
  const mode={matches:standalone,addEventListener:(k,v)=>events['mode:'+k]=v};
- const win={navigator:{userAgent:iphone?'iPhone':'Macintosh',standalone},innerWidth:402,innerHeight:874,visualViewport:{height:772,scale:1},matchMedia:()=>mode,addEventListener:(k,v)=>events[k]=v,setTimeout:fn=>fn()};
+ const win={navigator:{userAgent:iphone?'iPhone':'Macintosh',standalone},innerWidth:width,innerHeight:height,screen,visualViewport:{height:772,scale:1},matchMedia:()=>mode,addEventListener:(k,v)=>events[k]=v,setTimeout:fn=>fn()};
  installStandaloneLayout(win,doc);
  return {win,doc,events,properties,classes,mode,height:()=>properties.get('--home-height')};
 }
@@ -47,4 +47,28 @@ test('a later full measurement replaces an initially short height',()=>{
 });
 test('leaving standalone restores the ordinary CSS layout',()=>{
  const f=fixture();f.mode.matches=false;f.win.navigator.standalone=false;f.events['mode:change']();assert.ok(!f.classes.has('iphone-home'));
+});
+
+test('a fresh second launch recovers full height without any previous in-memory measurement',()=>{
+ const first=fixture({screen:{width:402,height:874}});assert.equal(first.height(),'874px');
+ for(let restart=0;restart<3;restart++){
+  const fresh=fixture({height:772,screen:{width:402,height:874}});
+  assert.equal(fresh.height(),'874px');
+ }
+});
+test('cold launch in landscape uses the matching screen axis',()=>{
+ for(const screen of [{width:402,height:874},{width:874,height:402}]){
+  const f=fixture({width:874,height:350,screen});assert.equal(f.height(),'402px');
+ }
+});
+test('over-reported layout height cannot push navigation beyond the physical display',()=>{
+ const f=fixture({height:950,screen:{width:402,height:874}});assert.equal(f.height(),'874px');
+});
+test('a nonmatching screen size falls back to layout measurements',()=>{
+ const f=fixture({screen:{width:1920,height:1080}});assert.equal(f.height(),'874px');
+});
+test('screen dimensions never change ordinary Safari or desktop layout',()=>{
+ for(const options of [{standalone:false},{iphone:false}]){
+  const f=fixture({...options,height:772,screen:{width:402,height:874}});assert.equal(f.height(),undefined);
+ }
 });
