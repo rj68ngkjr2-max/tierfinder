@@ -27,8 +27,23 @@ test('normal Safari and desktop layouts are untouched',()=>{
   const f=fixture(options);assert.equal(f.height(),undefined);assert.ok(!f.classes.has('iphone-home'));
  }
 });
-test('returning to the home screen app refreshes the dimensions',()=>{
- const f=fixture();f.win.innerHeight=852;f.events.pageshow();assert.equal(f.height(),'852px');
+test('resume and visibility events cannot replace full height with a phantom toolbar height',()=>{
+ const f=fixture();f.win.innerHeight=772;
+ for(const event of ['pageshow','visibilitychange','resize','focusout']){f.events[event]();assert.equal(f.height(),'874px',event);}
+});
+test('keyboard dismissal cannot shrink the frame before the viewport recovers',()=>{
+ const f=fixture();f.doc.activeElement.matches=()=>true;f.win.innerHeight=500;f.events.resize();
+ f.doc.activeElement.matches=()=>false;f.events.focusout();assert.equal(f.height(),'874px');
+ f.win.innerHeight=772;f.events.resize();assert.equal(f.height(),'874px');
+});
+test('rotating back restores the known portrait height even if Safari reports a short window',()=>{
+ const f=fixture();f.win.innerWidth=874;f.win.innerHeight=402;f.events.orientationchange();assert.equal(f.height(),'402px');
+ f.win.innerWidth=402;f.win.innerHeight=772;f.events.orientationchange();assert.equal(f.height(),'874px');
+});
+test('a later full measurement replaces an initially short height',()=>{
+ const f=fixture();f.win.innerWidth=400;f.win.innerHeight=750;f.events.resize();assert.equal(f.height(),'750px');
+ f.win.innerHeight=860;f.events.resize();assert.equal(f.height(),'860px');
+ f.win.innerHeight=750;f.events.pageshow();assert.equal(f.height(),'860px');
 });
 test('leaving standalone restores the ordinary CSS layout',()=>{
  const f=fixture();f.mode.matches=false;f.win.navigator.standalone=false;f.events['mode:change']();assert.ok(!f.classes.has('iphone-home'));
