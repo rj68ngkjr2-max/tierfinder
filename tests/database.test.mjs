@@ -21,6 +21,7 @@ before(async()=>{
  await db.exec(await readFile(new URL('../supabase/migrations/001_core.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/003_batch_image_lookup.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/004_lookalike_candidates.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -144,4 +145,18 @@ test('AI reservation is rate limited, while read-only eligibility checks consume
  assert.equal((await db.query("select count(*)::int as n from app.rate_limits where key='ai-user:user'")).rows[0].n,0);
  for(let i=0;i<3;i++)await aiCandidates('user',true,true);
  await rejects(()=>aiCandidates('user',true,true),'RATE_LIMIT');
+});
+
+test('daily AI budget permits 21 through 100, shares the legacy limit and rejects 101',async()=>{
+ await db.query("delete from app.rate_limits where key='ai-user:user'");
+ await db.query("update app.rate_limits set count=20 where key='ai-day:'||(now() at time zone 'UTC')::date");
+ await aiCandidates('user',true,true);
+ assert.equal((await db.query("select count from app.rate_limits where key='ai-day:'||(now() at time zone 'UTC')::date")).rows[0].count,21);
+ await db.query("update app.rate_limits set count=99 where key='ai-day:'||(now() at time zone 'UTC')::date");
+ await rpc('user','reserveAi');
+ assert.equal((await db.query("select count from app.rate_limits where key='ai-day:'||(now() at time zone 'UTC')::date")).rows[0].count,100);
+ await rejects(()=>aiCandidates('user',true,true),'AI_DAILY_LIMIT');
+ await rejects(()=>rpc('user','reserveAi'),'RATE_LIMIT');
+ await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
+ assert.equal((await db.query("select count from app.rate_limits where key='ai-day:'||(now() at time zone 'UTC')::date")).rows[0].count,100);
 });

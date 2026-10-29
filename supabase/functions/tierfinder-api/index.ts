@@ -29,7 +29,7 @@ Deno.serve(async(req:Request)=>{
    result={email:target.email,url:origin+'?type=recovery&token_hash='+encodeURIComponent(data.properties.hashed_token)};
   }else if(action==='aiStatus'){
    await rpc('aiStatus');const configured=!!Deno.env.get('GEMINI_API_KEY')&&!!Deno.env.get('GEMINI_MODEL')&&Deno.env.get('GEMINI_FREE_TIER_CONFIRMED')==='true';
-   result={configured,message:configured?'KI eingerichtet. Maximal 20 Vergleiche pro Tag für die gesamte App; zusätzlich gelten Anbieterlimits.':'Der KI-Zugang ist noch nicht eingerichtet. Entdecken, Likes und Anfragen sind verfügbar.'};
+   result={configured,message:configured?'KI eingerichtet. Maximal 100 KI-Aufrufe pro Tag (einschließlich Wiederholungsversuchen) für die gesamte App; zusätzlich gelten Anbieterlimits.':'Der KI-Zugang ist noch nicht eingerichtet. Entdecken, Likes und Anfragen sind verfügbar.'};
   }else if(action==='lookalike'){
    result=await compareLookalike(p,{
     key:Deno.env.get('GEMINI_API_KEY'),model:Deno.env.get('GEMINI_MODEL'),freeTier:Deno.env.get('GEMINI_FREE_TIER_CONFIRMED'),

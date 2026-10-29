@@ -21,7 +21,7 @@ export const messages={
   INVALID_TRANSITION:'Der Status hat sich bereits geändert. Bitte aktualisiere die Ansicht.',
   AI_TIMEOUT:'Gemini braucht gerade zu lange. Dein Bild bleibt ausgewählt – bitte versuche es erneut.',
   AI_CONFIGURATION:'Der Gemini-Zugang oder das eingestellte Modell ist nicht verfügbar. Der Administrator muss die KI-Konfiguration prüfen.',
-  AI_DAILY_LIMIT:'Die 20 KI-Vergleiche für heute sind aufgebraucht. Ab morgen (UTC) steht das Demo-Kontingent wieder bereit.',
+  AI_DAILY_LIMIT:'Das interne Tageslimit von 100 KI-Aufrufen ist erreicht. Es wird um 00:00 UTC zurückgesetzt. Auch Wiederholungsversuche zählen mit.',
   AI_IMAGES_UNAVAILABLE:'Die Tierbilder konnten nicht geladen werden. Bitte versuche es erneut.',
   AI_IMAGE_UNSUITABLE:'Dieses Bild konnte Gemini nicht auswerten. Bitte verwende das generierte Beispielporträt oder ein anderes generiertes Bild.',
   AI_SETUP_REQUIRED:'Der KI-Zugang muss noch durch den Administrator eingerichtet werden.',
