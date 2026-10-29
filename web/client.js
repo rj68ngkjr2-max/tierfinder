@@ -129,11 +129,56 @@ function editAnimal(a){let pendingUpload=null;const imageTicket=++modalGeneratio
   const upload=f.querySelector('#animalUpload'),save=f.querySelector('[type=submit]');
   upload.onchange=async()=>{const file=upload.files[0],version=++previewVersion;pendingUpload=null;if(!file)return;save.disabled=true;select.disabled=true;hint.textContent='Bild wird vorbereitet …';try{const prepared=await prepareAnimalUpload(file);if(imageTicket!==modalGeneration||version!==previewVersion||!d.open)return;pendingUpload=prepared;select.value='';preview.src='data:'+prepared.mime_type+';base64,'+prepared.data;preview.hidden=false;hint.textContent='Bild bereit. Es wird mit dem Tier gespeichert.';}catch(e){hint.textContent=e.message;upload.value='';}finally{save.disabled=false;select.disabled=false;}};
 }
-async function prepareAnimalUpload(file){if(!['image/jpeg','image/png'].includes(file.type)||file.size>20*1024*1024)throw Error('Bitte wähle JPG oder PNG bis 20 MB.');const url=URL.createObjectURL(file);try{const image=new Image();image.src=url;await image.decode();const scale=Math.min(1,1200/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',0.82).split(',')[1];if(data.length>2796204)throw Error('Das Bild ist nach der Optimierung noch zu groß. Bitte wähle ein kleineres Bild.');return {mime_type:'image/jpeg',data};}catch(e){throw Error(e.message||'Das Bild konnte nicht gelesen werden.');}finally{URL.revokeObjectURL(url);}}
+async function prepareAnimalUpload(file,maxEdge=1200){if(!['image/jpeg','image/png'].includes(file.type)||file.size>20*1024*1024)throw Error('Bitte wähle JPG oder PNG bis 20 MB.');const url=URL.createObjectURL(file);try{const image=new Image();image.src=url;await image.decode();const scale=Math.min(1,maxEdge/Math.max(image.naturalWidth,image.naturalHeight));const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(image,0,0,canvas.width,canvas.height);const data=canvas.toDataURL('image/jpeg',0.82).split(',')[1];if(data.length>2796204)throw Error('Das Bild ist nach der Optimierung noch zu groß. Bitte wähle ein kleineres Bild.');return {mime_type:'image/jpeg',data};}catch(e){throw Error(e.message||'Das Bild konnte nicht gelesen werden.');}finally{URL.revokeObjectURL(url);}}
 
 
-function renderAi(main){main.append(heading('Eine kleine Ähnlichkeit.','Entdecke dein tierisches Lookalike – spielerisch, mit einem generierten Personenbild.'));const layout=el('div','ai-layout'),panel=el('section','panel'),result=el('section');panel.innerHTML='<div class="eyebrow">Dein Bild, eine neue Begegnung</div><h2>Wem siehst du ähnlich?</h2><p class="small">Der Vergleich nutzt bis zu 12 neue, verfügbare Tiere deiner gewählten Tierarten. Optische Ähnlichkeit sagt nichts über Adoptionseignung aus.</p><form id="aiForm"><div class="upload"><label for="aiFile">Generiertes Personenbild auswählen</label><input id="aiFile" type="file" accept="image/png,image/jpeg" required><p class="small">PNG oder JPEG · maximal 2 MB</p><img id="aiPreview" class="ai-preview" alt="Vorschau des ausgewählten Bildes" hidden></div><label class="check"><input id="aiConsent" type="checkbox" required><span>Dieses Bild ist generiert. Ich möchte es für den Vergleich an den KI-Dienst übertragen.</span></label><button type="submit" class="full">Lookalike entdecken ✳</button></form>';layout.append(panel,result);main.append(layout);empty(result,'Eine neue Perspektive.','Hier erscheint nach dem Vergleich dein tierisches Lookalike.');let data='';$('#aiFile').onchange=async()=>{data='';$('#aiPreview').hidden=true;const file=$('#aiFile').files[0];if(!file)return;if(file.size>2*1024*1024||!['image/png','image/jpeg'].includes(file.type)){notice('Bitte wähle eine PNG- oder JPEG-Datei bis 2 MB.',true);$('#aiFile').value='';return;}try{data=await new Promise((res,rej)=>{const reader=new FileReader();reader.onload=()=>res(reader.result);reader.onerror=rej;reader.readAsDataURL(file);});if($('#aiPreview')){$('#aiPreview').src=data;$('#aiPreview').hidden=false;}}catch(e){notice('Das Bild konnte nicht gelesen werden.',true);}};
-  $('#aiForm').onsubmit=e=>{e.preventDefault();const form=e.currentTarget,b=form.querySelector('button'),file=$('#aiFile').files[0];if(!data||!file)return;perform(b,async()=>{const ticket=generation;result.innerHTML='<div class="loading">Die Tiere werden verglichen …</div>';try{const r=await api('lookalike',{data:data.split(',')[1],mime_type:file.type,generated_demo_image:$('#aiConsent').checked});if(ticket!==generation)return;result.replaceChildren();if(r.status==='NO_MATCH'){empty(result,'Noch kein Lookalike gefunden.','Versuche ein anderes generiertes Personenbild.');return;}result.append(el('div','eyebrow','Dein tierisches Lookalike'));const c=card(r.animal);c.body.append(button('Profil ansehen',()=>openDetails(r.animal.animal_id)));result.append(c.root);}catch(err){if(ticket===generation){result.replaceChildren();empty(result,'Vergleich gerade nicht möglich.',err.message);}throw err;}finally{data='';if($('#aiFile')){$('#aiFile').value='';$('#aiPreview').removeAttribute('src');$('#aiPreview').hidden=true;}}});};
+function renderAi(main){
+ main.append(heading('Dein tierisches Lookalike.','Ein Bild. Eine überraschende Begegnung.'));
+ const layout=el('div','ai-layout'),panel=el('section','panel ai-panel'),result=el('section','ai-result');
+ result.setAttribute('aria-live','polite');result.setAttribute('aria-label','Ergebnis des Bildvergleichs');
+ panel.innerHTML=`<div class="eyebrow">Mit Google Gemini</div><h2>Wem siehst du ähnlich?</h2>
+ <p class="small">Wähle ein generiertes Personenporträt. Gemini vergleicht es mit den Tierfotos deiner Auswahl.</p>
+ <form id="aiForm"><fieldset class="ai-fields"><div class="ai-source-actions"><button type="button" id="aiDemo" class="secondary">Beispielporträt verwenden</button></div>
+ <div class="upload"><label for="aiFile">Oder ein generiertes Porträt auswählen</label><input id="aiFile" type="file" accept="image/png,image/jpeg"><p class="small">JPG oder PNG bis 20 MB · wird automatisch verkleinert</p>
+ <img id="aiPreview" class="ai-preview" alt="Ausgewähltes generiertes Personenporträt" hidden><p id="aiImageStatus" class="small" role="status">Noch kein Bild ausgewählt.</p></div>
+ <p class="small ai-selection">Deine Tierarten: ${esc(account.species.map(x=>speciesNames[x]).join(', ')||'keine ausgewählt')} · <button type="button" id="aiPreferences" class="subtle">Ändern</button></p>
+ <label class="check"><input id="aiSeen" type="checkbox" checked><span>Gemerkte und übersprungene Tiere einbeziehen</span></label>
+ <label class="check"><input id="aiConsent" type="checkbox" required><span>Ich verwende ein generiertes Personenbild und möchte es zusammen mit den Tierfotos zum Vergleich an Google Gemini senden.</span></label>
+ <button type="submit" class="full" disabled>Lookalike entdecken ✳</button>
+ <p class="small ai-footnote">Das Porträt wird von TierFinder nicht dauerhaft gespeichert. Ein spielerischer Bildvergleich, keine Empfehlung zur Adoption. Bis zu 32 verfügbare Tiere pro Vergleich.</p></fieldset></form>`;
+ layout.append(panel,result);main.append(layout);
+ const form=panel.querySelector('form'),fields=panel.querySelector('fieldset'),fileInput=panel.querySelector('#aiFile'),preview=panel.querySelector('#aiPreview'),hint=panel.querySelector('#aiImageStatus'),submit=panel.querySelector('[type=submit]'),consent=panel.querySelector('#aiConsent'),seen=panel.querySelector('#aiSeen'),demo=panel.querySelector('#aiDemo');
+ let prepared=null,version=0,busy=false;const ticket=generation;
+ const current=()=>ticket===generation&&panel.isConnected;
+ const ready=()=>{submit.disabled=busy||!prepared||!consent.checked||!account?.species.length;};
+ consent.onchange=ready;
+ panel.querySelector('#aiPreferences').onclick=()=>navigate('profile');
+ empty(result,'Ein neuer Blick auf deine Tiere.','Wähle ein Porträt und starte den Vergleich. Hier erscheint dein Lookalike.');
+ async function selectImage(load,label){
+  const ownVersion=++version;prepared=null;preview.hidden=true;preview.removeAttribute('src');consent.checked=false;ready();hint.textContent='Bild wird vorbereitet …';result.replaceChildren();
+  try{const image=await load();if(!current()||version!==ownVersion)return;prepared=image;preview.src='data:'+image.mime_type+';base64,'+image.data;preview.hidden=false;hint.textContent=label;}
+  catch(e){if(current()&&version===ownVersion){hint.textContent=e.message||'Das Bild konnte nicht geladen werden.';fileInput.value='';}}
+  finally{if(current()&&version===ownVersion)ready();}
+ }
+ demo.onclick=()=>{fileInput.value='';selectImage(async()=>{const response=await fetch('./demo-portrait.json');if(!response.ok)throw Error('Das Beispielbild konnte nicht geladen werden. Bitte versuche es erneut.');const image=await response.json();if(image.mime_type!=='image/jpeg'||typeof image.data!=='string')throw Error('Das Beispielbild ist nicht verfügbar.');return image;},'KI-generiertes Beispielporträt · bereit zum Vergleich.');};
+ fileInput.onchange=()=>{const file=fileInput.files[0];if(!file)return;selectImage(()=>prepareAnimalUpload(file,768),'Dein generiertes Porträt · bereit zum Vergleich.');};
+ form.onsubmit=e=>{
+  e.preventDefault();if(busy||!prepared||!consent.checked)return;
+  const image=prepared;busy=true;fields.disabled=true;ready();result.innerHTML='<div class="loading" role="status">Gemini vergleicht die Tierfotos …<p class="small">Das kann einen Moment dauern.</p></div>';result.setAttribute('aria-busy','true');
+  const timer=setTimeout(()=>{if(current()&&busy){const loading=result.querySelector('.loading');if(loading)loading.firstChild.textContent='Der Bildvergleich läuft noch …';}},15000);
+  (async()=>{
+   try{
+    const r=await api('lookalike',{data:image.data,mime_type:image.mime_type,generated_demo_image:true,include_seen:seen.checked});
+    if(!current())return;result.replaceChildren();
+    if(r.status==='NO_MATCH'){empty(result,'Noch kein Lookalike gefunden.','Nutze ein gut erkennbares, generiertes Porträt mit genau einem Gesicht. Du kannst auch das Beispielbild ausprobieren.');return;}
+    result.append(el('div','eyebrow','Dein Lookalike'),el('p','small','Aus '+r.candidate_count+' verfügbaren Tierfotos ausgewählt.'));
+    const c=card(r.animal),actions=el('div','actions');
+    actions.append(button('Profil ansehen',()=>openDetails(r.animal.animal_id),'primary'),button('♡ Merken',async b=>{await api('swipe',{animal_id:r.animal.animal_id,decision:'LIKE'});b.textContent='♥ Gemerkt';notice(r.animal.name+' ist in deinen Likes.');},'secondary'));c.body.append(actions);result.append(c.root);
+    result.scrollIntoView({behavior:'smooth',block:'start'});
+   }catch(err){if(current()){result.replaceChildren();empty(result,'Vergleich gerade nicht möglich.',err.message);}}
+   finally{clearTimeout(timer);if(current()){busy=false;fields.disabled=false;result.removeAttribute('aria-busy');ready();}}
+  })();
+ };
 }
 let phoneDialog=null,dialogOpener=null;
 function showPhoneDialog(dialog){

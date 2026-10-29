@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 const root=fileURLToPath(new URL('../',import.meta.url));
 await mkdir(root+'dist',{recursive:true});
 await build({entryPoints:[root+'web/client.js'],bundle:true,format:'iife',target:['safari16','chrome110'],minify:true,outfile:root+'dist/app.js',legalComments:'eof'});
-for(const name of ['index.html','styles.css','manifest.webmanifest','sw.js','icon.svg','icon-180.png','icon-192.png','icon-512.png'])await copyFile(root+'web/'+name,root+'dist/'+name);
+for(const name of ['index.html','styles.css','manifest.webmanifest','sw.js','icon.svg','icon-180.png','icon-192.png','icon-512.png','demo-portrait.json'])await copyFile(root+'web/'+name,root+'dist/'+name);
 const code=await readFile(root+'dist/app.js','utf8');
 if(code.includes('google.script.run')||/sb_secret_[A-Za-z0-9_-]{15,}/.test(code))throw Error('Legacy transport or secret in frontend');
 const style=await readFile(root+'dist/styles.css','utf8');

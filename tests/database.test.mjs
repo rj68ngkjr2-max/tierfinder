@@ -20,6 +20,7 @@ before(async()=>{
  alter table storage.objects enable row level security;`);
  await db.exec(await readFile(new URL('../supabase/migrations/001_core.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/003_batch_image_lookup.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/004_lookalike_candidates.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -117,4 +118,30 @@ test('batched image lookup returns authorized image paths and handles missing im
 test('malformed status and preference values are rejected',async()=>{
  await rejects(()=>rpc('user','saveProfile',{alias:'Demo',species:['ADMIN']}),'VALIDATION_ERROR');
  await rejects(()=>rpc('shelter','saveAnimal',{name:'X',species:'DOG',description:'D',status:'PUBLIC'}),'check constraint');
+});
+
+async function aiCandidates(who,includeSeen=false,reserve=false){
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]]);
+ return (await db.query('select public.tier_ai_candidates($1,$2) as data',[includeSeen,reserve])).rows[0].data;
+}
+test('AI pool includes seen animals only when selected and never changes the swipe deck',async()=>{
+ const before=await aiCandidates('user');assert.equal(before.length,1);const id=before[0].animal_id;
+ await rpc('user','swipe',{animal_id:id,decision:'LIKE'});
+ assert.equal((await aiCandidates('user')).length,0);
+ assert.equal((await aiCandidates('user',true)).length,1);
+ assert.equal((await rpc('user','discover')).some(a=>a.animal_id===id),false);
+ await rpc('user','saveProfile',{alias:'Demo',species:['BIRD']});assert.equal((await aiCandidates('user',true)).length,0);
+ await rpc('user','saveProfile',{alias:'Demo',species:['DOG','CAT']});
+ await db.query("update app.animals set status='PAUSED' where animal_id=$1",[id]);assert.equal((await aiCandidates('user',true)).length,0);
+ await db.query("update app.animals set status='AVAILABLE' where animal_id=$1",[id]);
+});
+test('AI candidate endpoint enforces approval and roles, with no anonymous access',async()=>{
+ await rejects(()=>aiCandidates('pending',true),'APPROVAL_PENDING');await rejects(()=>aiCandidates('shelter',true),'FORBIDDEN');
+ await db.exec('set role anon');try{await rejects(()=>db.query('select public.tier_ai_candidates(true,false)'),'permission denied');}finally{await db.exec('reset role');}
+});
+test('AI reservation is rate limited, while read-only eligibility checks consume nothing',async()=>{
+ for(let i=0;i<5;i++)await aiCandidates('user',true,false);
+ assert.equal((await db.query("select count(*)::int as n from app.rate_limits where key='ai-user:user'")).rows[0].n,0);
+ for(let i=0;i<3;i++)await aiCandidates('user',true,true);
+ await rejects(()=>aiCandidates('user',true,true),'RATE_LIMIT');
 });

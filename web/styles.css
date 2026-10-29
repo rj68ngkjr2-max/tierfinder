@@ -22,3 +22,8 @@ html.iphone-home,html.iphone-home body{height:var(--home-height,100%)}
 html.iphone-home body{position:absolute;inset:0 auto auto 0}
 .iphone-home .app{position:absolute;inset:0 auto auto 0;height:var(--home-height,100%)}
 .iphone-home #nav{position:absolute}
+
+/* Lookalike: image preparation and results stay inside the existing app shell. */
+.ai-fields{border:0;margin:0;padding:0;min-width:0}.ai-panel h2{margin-bottom:12px}.ai-source-actions{margin:18px 0 4px}.ai-source-actions button{width:100%}.ai-selection{margin-top:16px}.ai-selection button{padding:4px 8px;min-height:44px}.ai-footnote{margin:14px 0 0}.ai-result{min-width:0;scroll-margin-top:14px}.ai-result:empty{display:none}.ai-result>.eyebrow{margin-top:8px}.ai-panel .ai-preview{max-height:260px;object-fit:contain;background:#eaf1ed;border-radius:18px}.ai-result .animal-photo{height:clamp(220px,32dvh,350px)}
+
+.ai-result .animal-photo img{object-fit:contain}
