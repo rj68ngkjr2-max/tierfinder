@@ -8,7 +8,8 @@ async function rpc(who,action,payload={}) {
  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||who]);
  return (await db.query('select public.tier_rpc($1,$2) as data',[action,JSON.stringify(payload)])).rows[0].data;
 }
-const rejects=(fn,code)=>assert.rejects(fn,new RegExp(code));
+let inIsolated=false;
+const rejects=async(fn,code)=>{if(inIsolated)await db.exec('savepoint expected_failure');try{await assert.rejects(fn,new RegExp(code));}finally{if(inIsolated)await db.exec('rollback to savepoint expected_failure; release savepoint expected_failure');}};
 before(async()=>{
  db=new PGlite();
  await db.exec(`create role anon; create role authenticated; create role service_role; create schema auth; create schema storage;
@@ -22,6 +23,7 @@ before(async()=>{
  await db.exec(await readFile(new URL('../supabase/migrations/003_batch_image_lookup.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/004_lookalike_candidates.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/006_animal_lifecycle.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -60,9 +62,15 @@ test('view counter counts once per user, animal and view type',async()=>{
  assert.equal((await rpc('shelter','shelterWorkspace')).animals.find(a=>a.animal_id==='dog').metrics.cards,1);
 });
 test('request lifecycle enforces ownership and idempotency',async()=>{
+ await rpc('admin','request',{animal_id:'dog'});
  const r=await rpc('user','request',{animal_id:'dog'});assert.equal((await rpc('user','request',{animal_id:'dog'})).request_id,r.request_id);
  await rejects(()=>rpc('other','requestStatus',{request_id:r.request_id,status:'APPROVED'}),'FORBIDDEN');
  await rejects(()=>rpc('admin','requestStatus',{request_id:r.request_id,status:'WITHDRAWN'}),'FORBIDDEN');
+ assert.equal((await rpc('shelter','requestStatus',{request_id:r.request_id,status:'APPROVED'})).status,'APPROVED');
+ assert.equal((await rpc('shelter','details',{animal_id:'dog'})).status,'PAUSED');
+ assert.equal((await rpc('admin','discover')).some(a=>a.animal_id==='dog'),false);
+ const waiting=(await rpc('shelter','requests')).find(q=>q.alias==='admin');assert.equal(waiting.status,'PENDING');
+ await rejects(()=>rpc('shelter','requestStatus',{request_id:waiting.request_id,status:'APPROVED'}),'NOT_AVAILABLE');
  assert.equal((await rpc('shelter','requestStatus',{request_id:r.request_id,status:'APPROVED'})).status,'APPROVED');
  await rejects(()=>rpc('user','requestStatus',{request_id:r.request_id,status:'WITHDRAWN'}),'INVALID_TRANSITION');
 });
@@ -70,7 +78,6 @@ test('foreign organization cannot edit animal even with forged organization_id',
  await rejects(()=>rpc('other','saveAnimal',{animal_id:'dog',organization_id:'other',name:'X'}),'FORBIDDEN');
 });
 test('adoption closes pending requests and cannot be reversed',async()=>{
- await rpc('admin','request',{animal_id:'dog'});
  await rpc('shelter','saveAnimal',{animal_id:'dog',name:'Balu',species:'DOG',description:'Fiktives Tier',status:'ADOPTED',age_months:''});
  assert.equal((await rpc('admin','requests')).find(r=>r.alias==='admin').status,'CLOSED_UNAVAILABLE');
  await rejects(()=>rpc('shelter','saveAnimal',{animal_id:'dog',status:'AVAILABLE'}),'INVALID_TRANSITION');
@@ -160,3 +167,65 @@ test('daily AI budget permits 21 through 100, shares the legacy limit and reject
  await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
  assert.equal((await db.query("select count from app.rate_limits where key='ai-day:'||(now() at time zone 'UTC')::date")).rows[0].count,100);
 });
+
+async function isolated(fn){await db.exec('begin');inIsolated=true;try{await fn();}finally{inIsolated=false;await db.exec('rollback');}}
+async function pet(id,species='DOG'){
+ await db.query(`insert into app.animals(animal_id,organization_id,name,species,description,status)
+ select $1,organization_id,$1,$2,'Fiktiver Test','AVAILABLE' from app.users where user_id='shelter'`,[id,species]);
+}
+test('undo restores newest eligible personal pass, preserves likes and other accounts',()=>isolated(async()=>{
+ await db.exec('delete from app.swipes');
+ for(const id of ['skip-old','skip-new','keep-like'])await pet(id);
+ await rpc('user','swipe',{animal_id:'skip-old',decision:'PASS'});
+ await db.query("update app.swipes set updated_at=now()-interval '1 hour' where animal_id='skip-old'");
+ await rpc('user','swipe',{animal_id:'skip-new',decision:'PASS'});
+ await rpc('user','swipe',{animal_id:'keep-like',decision:'LIKE'});
+ await rpc('admin','swipe',{animal_id:'skip-new',decision:'PASS'});
+ assert.equal((await rpc('user','undoPass',{animal_id:'keep-like',user_id:'admin'})).animal_id,'skip-new');
+ assert.equal((await rpc('user','undoPass')).animal_id,'skip-old');
+ assert.equal(await rpc('user','undoPass'),null);
+ assert.equal((await rpc('user','likes'))[0].animal_id,'keep-like');
+ assert.equal((await rpc('admin','undoPass')).animal_id,'skip-new');
+ await rejects(()=>rpc('shelter','undoPass'),'FORBIDDEN');
+ await rejects(()=>rpc('pending','undoPass'),'APPROVAL_PENDING');
+}));
+test('undo excludes paused, deleted and filtered species without losing their passes',()=>isolated(async()=>{
+ await db.exec('delete from app.swipes');
+ for(const id of ['undo-paused','undo-deleted']){await pet(id);await rpc('user','swipe',{animal_id:id,decision:'PASS'});}
+ await pet('undo-bird','BIRD');await rpc('user','swipe',{animal_id:'undo-bird',decision:'PASS'});
+ await db.query("update app.animals set status='PAUSED' where animal_id='undo-paused'");
+ await rpc('shelter','deleteAnimal',{animal_id:'undo-deleted'});
+ assert.equal(await rpc('user','undoPass'),null);
+ assert.equal((await db.query("select count(*)::int as n from app.swipes where user_id='user'")).rows[0].n,3);
+ await rpc('user','saveProfile',{alias:'Demo',species:['BIRD']});
+ assert.equal((await rpc('user','undoPass')).animal_id,'undo-bird');
+}));
+test('deletion is owner-only, idempotent and hides listing and images while retaining request history',()=>isolated(async()=>{
+ await pet('delete-me');
+ await db.exec(`insert into app.animal_images(image_id,animal_id,storage_path,mime_type) values('delete-img','delete-me','test/delete.jpg','image/jpeg');
+ update app.animals set primary_image_id='delete-img' where animal_id='delete-me';`);
+ await rpc('user','swipe',{animal_id:'delete-me',decision:'LIKE'});
+ const request=await rpc('user','request',{animal_id:'delete-me'});
+ const waiting=await rpc('admin','request',{animal_id:'delete-me'});
+ await rejects(()=>rpc('other','deleteAnimal',{animal_id:'delete-me'}),'FORBIDDEN');
+ await rejects(()=>rpc('user','deleteAnimal',{animal_id:'delete-me'}),'FORBIDDEN');
+ await rpc('shelter','requestStatus',{request_id:request.request_id,status:'APPROVED'});
+ await rpc('shelter','deleteAnimal',{animal_id:'delete-me'});
+ assert.equal(await rpc('shelter','deleteAnimal',{animal_id:'delete-me'}),true);
+ for(const who of ['user','admin']){
+  assert.equal((await rpc(who,'discover')).some(a=>a.animal_id==='delete-me'),false);
+  assert.equal((await rpc(who,'likes')).some(a=>a.animal_id==='delete-me'),false);
+  assert.equal((await aiCandidates(who,true)).some(a=>a.animal_id==='delete-me'),false);
+  await rejects(()=>rpc(who,'details',{animal_id:'delete-me'}),'NOT_FOUND');
+  await rejects(()=>rpc(who,'image',{animal_id:'delete-me'}),'NOT_FOUND');
+  assert.deepEqual(await rpc(who,'images',{animal_ids:['delete-me']}),[]);
+  await rejects(()=>rpc(who,'swipe',{animal_id:'delete-me',decision:'LIKE'}),'NOT_FOUND');
+  await rejects(()=>rpc(who,'request',{animal_id:'delete-me'}),'NOT_FOUND');
+  assert.equal((await db.query("select public.tier_image_access('test/delete.jpg',false) as ok")).rows[0].ok,false);
+ }
+ const history=await rpc('shelter','requests');
+ for(const id of [request.request_id,waiting.request_id]){const row=history.find(r=>r.request_id===id);assert.equal(row.status,'CLOSED_UNAVAILABLE');assert.equal(row.animal.deleted,true);assert.equal(row.animal.has_image,false);}
+ assert.equal((await rpc('shelter','shelterWorkspace')).animals.some(a=>a.animal_id==='delete-me'),false);
+ await rejects(()=>rpc('shelter','saveAnimal',{animal_id:'delete-me',status:'AVAILABLE'}),'NOT_FOUND');
+ assert.equal((await db.query("select count(*)::int as n from app.animals where animal_id='delete-me' and deleted_at is not null")).rows[0].n,1);
+}));

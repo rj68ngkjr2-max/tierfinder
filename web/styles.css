@@ -80,3 +80,5 @@ main[data-page="discover"]>.empty{margin:0;max-width:520px;width:100%;align-self
 @media(prefers-reduced-motion:no-preference){.discover .animalcard{animation:discover-arrive .22s ease-out}@keyframes discover-arrive{from{opacity:.4;scale:.975}to{opacity:1;scale:1}}}
 @media(prefers-reduced-motion:reduce){.discover .animalcard,#nav::before{transition:none}}
 @media(orientation:landscape) and (max-height:500px){.discover .card-body{margin-top:0;border-radius:0;box-shadow:none}.swipe-badges{right:52%;left:12px;top:14px;flex-direction:column;gap:12px;align-items:start}}
+
+.undo-skip{flex:0 0 44px;padding:4px;font-size:23px;color:var(--green);border:0;border-radius:13px;background:#ffffffb8}.delete-animal{color:var(--red)!important}
