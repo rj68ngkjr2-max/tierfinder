@@ -24,6 +24,7 @@ before(async()=>{
  await db.exec(await readFile(new URL('../supabase/migrations/004_lookalike_candidates.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/006_animal_lifecycle.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/007_listing_context.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -243,4 +244,14 @@ test('discover follows saved preferences across all species, reset and bootstrap
   assert.ok(boot.views.discover.every(a=>species.includes(a.species)));
   if(!species.length)assert.deepEqual(deck,[]);
  }
+}));
+
+test('listing context includes organization location without contact details and meeting flag stays owner-only',()=>isolated(async()=>{
+ await pet('listing-context');await db.exec("update app.organizations set location='Stuttgart' where organization_id=(select organization_id from app.animals where animal_id='listing-context')");
+ const a=(await rpc('user','discover')).find(a=>a.animal_id==='listing-context');assert.equal(a.location,'Stuttgart');assert.equal(a.organization_name,'shelter');assert.equal(a.email,undefined);assert.equal(a.has_confirmed_meeting,undefined);
+ await rpc('user','swipe',{animal_id:a.animal_id,decision:'LIKE'});assert.equal((await rpc('user','likes')).find(x=>x.animal_id===a.animal_id).location,'Stuttgart');
+ assert.equal((await rpc('shelter','shelterWorkspace')).animals.find(x=>x.animal_id===a.animal_id).has_confirmed_meeting,false);
+ const r=await rpc('user','request',{animal_id:a.animal_id});await rpc('shelter','requestStatus',{request_id:r.request_id,status:'APPROVED'});
+ assert.equal((await rpc('shelter','shelterWorkspace')).animals.find(x=>x.animal_id===a.animal_id).has_confirmed_meeting,true);
+ assert.equal((await rpc('other','shelterWorkspace')).animals.some(x=>x.animal_id===a.animal_id),false);
 }));

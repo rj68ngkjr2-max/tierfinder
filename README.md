@@ -23,6 +23,12 @@ Die rollenabhängige Einführung erscheint beim ersten Einstieg pro Konto und Ro
 - „Vermittelt“ ist endgültig und schließt offene Anfragen. Bestätigtes Kennenlernen ist noch keine Adoption.
 - Der optionale Gemini-Vergleich verwendet ein generiertes Personenbild und liefert ein tierisches Lookalike mit Profilzugang und einer bewussten Merken-Aktion. Ein KI-generiertes Beispielporträt ist enthalten; keine echten Personenbilder sind für die Demo nötig.
 
+## Merkliste und Tierverwaltung
+
+Entdecken behält innerhalb der Sitzung die Reihenfolge beim Tabwechsel. Beim erneuten Öffnen werden frische Datensätze abgefragt: nicht mehr verfügbare Tiere verschwinden, neue Tiere kommen hinten dazu. Erfolgreiche Swipes werden auch bei gleichzeitiger Navigation nicht erneut angezeigt. Fehler können direkt unter der erhaltenen Karte erneut versucht werden.
+
+Die Merkliste zeigt kompakte Karten mit Ort der Vermittlung und Status sowie einen Filter für verfügbare Tiere. Die Tierverwaltung bietet Statusfilter und einen direkten Einstieg zu offenen Anfragen. Bei pausierten Tieren zeigt sie an, ob ein bestätigtes Kennenlernen hinterlegt ist. Migration `007_listing_context.sql` ergänzt diese Angaben ohne Änderung von Tierdaten oder Zugriffsrechten.
+
 ## Technik
 
 - `web/`: HTML, CSS, Client und Supabase-Anbindung.

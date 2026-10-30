@@ -1,7 +1,8 @@
+import {byAvailability,openRequestCount,requestsInOrder} from './lists.js';
 import {createAppearance} from './appearance.js';
 import {tutorialSteps,createTutorialMemory} from './tutorial.js';
 import {backend} from './backend.js';
-import {shuffleAnimals,preferredAnimals} from './discover.js';
+import {createDiscoverDeck,preferredAnimals} from './discover.js';
 import {installCardSwipe,installTabScrub} from './gestures.js';
 import {installStandaloneLayout} from './standalone-layout.js';
 installStandaloneLayout();
@@ -11,10 +12,13 @@ const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=
 const speciesNames={DOG:'Hunde',CAT:'Katzen',BIRD:'Vögel',RABBIT:'Kaninchen'},singleNames={DOG:'Hund',CAT:'Katze',BIRD:'Vogel',RABBIT:'Kaninchen'};
 const statusNames={DRAFT:'Entwurf',AVAILABLE:'Verfügbar',PAUSED:'Pausiert',ADOPTED:'Vermittelt',PENDING:'Anfrage offen',APPROVED:'Kennenlernen bestätigt',DECLINED:'Abgelehnt',WITHDRAWN:'Zurückgezogen',CLOSED_UNAVAILABLE:'Geschlossen · Tier nicht verfügbar'};
 let token='',account=null,page='',generation=0,noticeTimer,modalGeneration=0,detailDirty=false;
+const discoverDeck=createDiscoverDeck(),pendingDeckChanges=new Set();
+let likesFilter='ALL',shelterFilter='ALL';
 const animalMemory=new Map(),photoMemory=new Map(),photoPending=new Map();let photoQueue=[],photoScheduled=false,photoBatches=0;
 const isMaster=()=>account?.role==='ADMIN'&&account?.is_admin;
 const homePage=()=>account?.role==='SHELTER'||isMaster()?'shelter':'discover';
 
+function announce(message){$('#actionStatus').textContent=message;}
 function notice(message,error=false){$('#notice').textContent=message;$('#notice').className=error?'error':'';$('#notice').hidden=false;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>$('#notice').hidden=true,7000);}
 // Short-lived, account-local metadata only. Account metadata stays in memory; auth-session persistence is handled separately.
 const dataMemory=new Map(),dataPending=new Map();let dataEpoch=0;
@@ -33,18 +37,20 @@ function api(action,payload={},options={}){
   backend.rpc(action,payload).then(r=>{
    if(session!==token){reject(new Error('Die Sitzung hat sich geändert. Bitte öffne die Ansicht erneut.'));return;}
    if(changingActions.has(action))invalidateData();
-   if(r.ok){if(['swipe','request'].includes(action)&&$('#detail')?.open)detailDirty=true;
+   if(r.ok){if(action==='swipe')discoverDeck.remove(payload.animal_id);if(action==='undoPass')discoverDeck.restore(r.data);if(action==='resetPasses')discoverDeck.reset();
+    if(['swipe','request'].includes(action)&&$('#detail')?.open)detailDirty=true;
     if(cached&&epoch===dataEpoch)rememberData(action,r.data);
     if(action==='view')dataMemory.delete('shelterWorkspace');
     resolve(r.data);
    }else{const e=new Error(r.error.message);e.code=r.error.code;if(e.code==='NOT_AUTHENTICATED')clearSession();reject(e);}
   }).catch(()=>{if(session===token&&changingActions.has(action))invalidateData();reject(new Error('Die Verbindung ist unterbrochen. Bitte versuche es erneut.'));});
  });
+ if(['swipe','undoPass','resetPasses'].includes(action)){pendingDeckChanges.add(task);task.then(()=>pendingDeckChanges.delete(task),()=>pendingDeckChanges.delete(task));}
  if(!cached)return task;
  const pending=task.finally(()=>{if(dataPending.get(action)===pending)dataPending.delete(action);});dataPending.set(action,pending);return pending.then(copyData);
 }
-async function startSession(){invalidateData();const session=token,epoch=dataEpoch;$('#main').innerHTML='<div class="loading">Deine Tiere werden geladen …</div>';const result=await api('bootstrap');if(token!==session||dataEpoch!==epoch)return;account=result.account;Object.entries(result.views).forEach(([key,value])=>rememberData(key,value));await navigate(homePage());if(token===session&&account&&!tutorialMemory.seen(token,account))openTutorial();}
-function clearSession(){invalidateData();closePhoneDialog();token='';account=null;animalMemory.clear();photoMemory.clear();photoPending.clear();photoQueue=[];generation++;modalGeneration++;$('#detail').close();authScreen();}
+async function startSession(){discoverDeck.reset();likesFilter='ALL';shelterFilter='ALL';invalidateData();const session=token,epoch=dataEpoch;$('#main').innerHTML='<div class="loading">Deine Tiere werden geladen …</div>';const result=await api('bootstrap');if(token!==session||dataEpoch!==epoch)return;account=result.account;Object.entries(result.views).forEach(([key,value])=>rememberData(key,value));await navigate(homePage());if(token===session&&account&&!tutorialMemory.seen(token,account))openTutorial();}
+function clearSession(){discoverDeck.reset();pendingDeckChanges.clear();invalidateData();closePhoneDialog();token='';account=null;animalMemory.clear();photoMemory.clear();photoPending.clear();photoQueue=[];generation++;modalGeneration++;$('#detail').close();authScreen();}
 async function perform(button,fn){if(button?.disabled)return;if(button)button.disabled=true;try{return await fn();}catch(e){notice(e.message,true);}finally{if(button?.isConnected)button.disabled=false;}}
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e;}
 function button(text,fn,cls=''){const b=el('button',cls,text);b.type='button';b.onclick=()=>perform(b,()=>fn(b));return b;}
@@ -107,8 +113,8 @@ let disposeNavGesture;
 function navigation(){disposeNavGesture?.();const model=navigationModel(account),selected=activeTab(model,page);$('#nav').hidden=false;$('#nav').replaceChildren(...model.tabs.map(([key,label])=>{const b=button(label,()=>navigate(key),selected===key?'active':'');b.dataset.route=key;b.innerHTML=navIcon(key)+'<span>'+esc(label)+'</span>';if(selected===key)b.setAttribute('aria-current','page');return b;}));disposeNavGesture=installTabScrub($('#nav'),key=>{if(key!==page)navigate(key);});const avatar=button((account.alias||'Profil').trim().split(/\s+/).slice(0,2).map(x=>Array.from(x)[0]).join('').toUpperCase(),()=>navigate('profile'),'account-avatar');avatar.setAttribute('aria-label','Profil öffnen: '+account.alias);$('#identity').replaceChildren(avatar);}
 function renderMore(main){main.append(el('p','more-intro','Deine Favoriten, neue Perspektiven und alles rund um dein Konto.'));const list=el('div','more-list'),descriptions={likes:'Deine gemerkten Lieblinge',ai:'Dein tierisches Ebenbild finden',profile:'Konto und Tierpräferenzen'};navigationModel(account).more.forEach(([key,label])=>{const row=button('',()=>navigate(key),'more-row');row.innerHTML='<span class="more-icon">'+navIcon(key)+'</span><span class="more-copy"><strong>'+esc(label)+'</strong><small>'+esc(descriptions[key]||'')+'</small></span><span class="more-chevron" aria-hidden="true">›</span>';list.append(row);});main.append(list,el('p','account-caption','Angemeldet als '+account.alias),button('Abmelden',logout,'logout-action'));}
 async function navigate(next,fresh=false){if(!account)return authScreen();page=next;$('#breadcrumb').textContent=({more:'Mehr für dich',admin:'Verwaltung',shelter:'Tierverwaltung',discover:'Entdecken',likes:'Meine Likes',requests:'Anfragen',ai:'Lookalike',profile:'Profil'})[next]||'Tiervermittlung';$('#main').scrollTop=0;const ticket=++generation;navigation();const main=$('#main');main.dataset.page=next;main.innerHTML='<div class="loading">Einen Moment …</div>';try{
-  let data;if(next==='discover')data=shuffleAnimals(await api('discover',{}, {fresh}));if(next==='likes')data=await api('likes',{}, {fresh});if(next==='requests')data=await api('requests',{}, {fresh});if(next==='shelter')data=await api('shelterWorkspace',{}, {fresh});if(next==='admin')data=await api('adminAccounts',{}, {fresh});
-  if(ticket!==generation)return;main.replaceChildren();({discover:renderDiscover,likes:renderLikes,requests:renderRequests,shelter:renderShelter,profile:renderProfile,ai:renderAi,admin:renderAdmin,more:renderMore})[next](main,data);main.focus({preventScroll:true});
+  let data;if(next==='discover'){await Promise.allSettled([...pendingDeckChanges]);if(ticket!==generation)return;data=await api('discover',{}, {fresh:fresh||discoverDeck.initialized});}if(next==='likes')data=await api('likes',{}, {fresh});if(next==='requests')data=await api('requests',{}, {fresh});if(next==='shelter')data=await api('shelterWorkspace',{}, {fresh});if(next==='admin')data=await api('adminAccounts',{}, {fresh});
+  if(ticket!==generation)return;if(next==='discover')data=discoverDeck.reconcile(data,account.species);main.replaceChildren();({discover:renderDiscover,likes:renderLikes,requests:renderRequests,shelter:renderShelter,profile:renderProfile,ai:renderAi,admin:renderAdmin,more:renderMore})[next](main,data);main.focus({preventScroll:true});
 }catch(e){if(ticket===generation){main.replaceChildren();empty(main,'Gerade nicht erreichbar',e.message,button('Erneut versuchen',()=>navigate(next)));}}}
 function filters(){
  const group=el('div','filters preference-summary');group.setAttribute('aria-label','Deine Tierpräferenzen');
@@ -132,28 +138,50 @@ function renderDiscover(main,animals){
   },'undo-skip');
   undo.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h5M3 10V5M3 10a8 8 0 1 1 1 8"/></svg>';undo.title='Zuletzt übersprungenes Tier zurückholen';undo.setAttribute('aria-label','Überspringen rückgängig machen');toolbar.prepend(undo);main.append(toolbar);
   if(!animals.length){empty(main,account.species.length?'Für heute alle kennengelernt.':'Welche Tiere möchtest du entdecken?',account.species.length?'Ändere deine Auswahl oder entdecke übersprungene Tiere erneut. Deine Likes bleiben gemerkt.':'Wähle in deinem Profil mindestens eine Tierart aus.',account.species.length?button('Übersprungene erneut ansehen',async()=>{await api('resetPasses');await navigate('discover');},'secondary'):null);return;}
-  const a=animals[0],wrap=el('div','discover'),left=el('div','discover-stack'),c=card(a);const actions=el('div','actions');
+  const a=animals[0],wrap=el('div','discover'),left=el('div','discover-stack'),c=card(a);const actions=el('div','actions'),feedback=el('div','discover-feedback');feedback.hidden=true;feedback.setAttribute('role','alert');
   async function decide(d){
-   if(deciding)return;deciding=true;toolbar.querySelectorAll('button').forEach(b=>b.disabled=true);c.root.setAttribute('aria-busy','true');c.root.querySelectorAll('button').forEach(b=>b.disabled=true);
+   if(deciding)return;deciding=true;feedback.hidden=true;feedback.replaceChildren();toolbar.querySelectorAll('button').forEach(b=>b.disabled=true);c.root.setAttribute('aria-busy','true');c.root.querySelectorAll('button').forEach(b=>b.disabled=true);
    try{
     const [saved]=await Promise.allSettled([api('swipe',{animal_id:a.animal_id,decision:d}),swipe.exit(d)]);
     if(saved.status==='rejected')throw saved.reason;
     animals=animals.filter(x=>x.animal_id!==a.animal_id);
-    if(ticket===generation&&c.root.isConnected){notice(d==='LIKE'?a.name+' ist jetzt bei deinen Likes.':'Tier übersprungen.');main.replaceChildren();renderDiscover(main,animals);}
-   }catch(e){swipe.restore();throw e;}
+    if(ticket===generation&&c.root.isConnected){announce(d==='LIKE'?a.name+' gemerkt.':a.name+' übersprungen.');main.replaceChildren();renderDiscover(main,animals);}
+   }catch(e){swipe.restore();if(ticket===generation&&c.root.isConnected){
+     feedback.hidden=false;const unavailable=['NOT_AVAILABLE','NOT_FOUND'].includes(e.code);
+     feedback.replaceChildren(el('p','',e.message),button(unavailable?'Auswahl aktualisieren':'Erneut versuchen',()=>unavailable?navigate('discover',true):decide(d),'secondary'));
+    }else notice(e.message,true);}
+
    finally{deciding=false;toolbar.querySelectorAll('button').forEach(b=>b.disabled=false);c.root.removeAttribute('aria-busy');c.root.querySelectorAll('button').forEach(b=>b.disabled=false);}
   }
-  const pass=button('↶ Überspringen',()=>decide('PASS'),'secondary'),like=button('♡ Merken',()=>decide('LIKE'));actions.append(pass,like);c.body.append(button('Profil ansehen ↗',()=>openDetails(a.animal_id),'subtle'),actions);left.append(c.root,el('div','counter',animals.length+' neue Tiere in deiner Auswahl'));
+  const pass=button('↶ Überspringen',()=>decide('PASS'),'secondary'),like=button('♡ Merken',()=>decide('LIKE'));actions.append(pass,like);c.body.append(button('Profil ansehen ↗',()=>openDetails(a.animal_id),'subtle'),actions);left.append(c.root,feedback,el('div','counter',animals.length+' neue Tiere in deiner Auswahl'));
   wrap.append(left);main.append(wrap);
   const badges=el('div','swipe-badges');badges.setAttribute('aria-hidden','true');badges.append(el('span','swipe-like','♡ MERKEN'),el('span','swipe-pass','ÜBERSPRINGEN'));c.root.append(badges);
   const swipe=installCardSwipe(c.root,{disabled:()=>deciding,onDecision:d=>perform(null,()=>decide(d))});
   api('view',{animal_id:a.animal_id,view_type:'CARD'}).catch(()=>{});
 }
-function renderLikes(main,animals){main.append(heading('Deine gemerkten Tiere.','Nimm dir Zeit. Hier beginnt aus einem ersten Eindruck ein Kennenlernen.'));if(!animals.length){empty(main,'Noch kein Tier gemerkt.','Dein nächstes Lieblingstier könnte eine Karte entfernt sein.',button('Tiere entdecken',()=>navigate('discover')));return;}const grid=el('div','grid');animals.forEach(a=>{const c=card(a),actions=el('div','actions');actions.append(button('Profil ansehen',()=>openDetails(a.animal_id)),button('Entfernen',async()=>{await api('swipe',{animal_id:a.animal_id,decision:'PASS'});await navigate('likes');},'secondary'));c.body.append(actions);grid.append(c.root);});main.append(grid);}
+function availabilityFilters(values,current,onSelect,label){
+ const controls=el('div','list-filters');controls.setAttribute('role','group');controls.setAttribute('aria-label',label);
+ values.forEach(([value,text])=>{const b=button(text,()=>onSelect(value),'chip'+(value===current?' selected':''));b.setAttribute('aria-pressed',value===current);controls.append(b);});return controls;
+}
+function renderLikes(main,animals){
+ main.append(heading('Deine Merkliste.','Deine Favoriten und ihre aktuelle Verfügbarkeit.'),button('Aktualisieren',()=>navigate('likes',true),'secondary'));
+ if(!animals.length){empty(main,'Noch kein Tier gemerkt.','Merke dir beim Entdecken ein Tier, das dich interessiert.',button('Tiere entdecken',()=>navigate('discover')));return;}
+ main.append(availabilityFilters([['ALL','Alle ('+animals.length+')'],['AVAILABLE','Verfügbar ('+byAvailability(animals,'AVAILABLE').length+')']],likesFilter,value=>{likesFilter=value;main.replaceChildren();renderLikes(main,animals);},'Merkliste filtern'));
+ const visible=byAvailability(animals,likesFilter);if(!visible.length){empty(main,'Gerade kein Favorit verfügbar.','Pausierte und bereits vermittelte Tiere findest du unter „Alle“.',button('Alle zeigen',()=>{likesFilter='ALL';main.replaceChildren();renderLikes(main,animals);},'secondary'));return;}
+ const list=el('div','favorite-list');visible.forEach(a=>{
+  const row=el('article','favorite-row'),photo=el('div','animal-photo favorite-photo'),body=el('div','favorite-copy');animalMemory.set(a.animal_id,a);schedulePhoto(a,photo);
+  const name=button(a.name,()=>openDetails(a.animal_id),'favorite-name');name.setAttribute('aria-label','Tierprofil von '+a.name+' öffnen');
+  const status=el('span','tag',statusNames[a.status]);status.dataset.status=a.status;
+  body.append(name,el('p','meta',singleNames[a.species]+' · '+age(a)),el('p','small favorite-location',a.location||'Ort nicht angegeben'),status);
+  if(a.status==='PAUSED')body.append(el('p','small','Aktuell nicht für neue Anfragen verfügbar.'));
+  const actions=el('div','actions');actions.append(button('Profil ansehen',()=>openDetails(a.animal_id),'secondary'),button('Entfernen',async()=>{await api('swipe',{animal_id:a.animal_id,decision:'PASS'});announce(a.name+' aus der Merkliste entfernt.');await navigate('likes');},'subtle'));
+  row.append(photo,body,actions);list.append(row);
+ });main.append(list);
+}
 async function openDetails(id){const ticket=++modalGeneration;const dialog=$('#detail'),body=$('#detailBody');body.innerHTML='<div class="loading">Tierprofil wird geladen …</div>';const known=animalMemory.get(id);if(known){body.replaceChildren(card(known).root,el('p','',known.description||''),el('p','small','Aktuelle Verfügbarkeit wird geprüft …'));}$('#detailTitle').textContent='Tierprofil';if(!dialog.open)showPhoneDialog(dialog);try{const a=await api('details',{animal_id:id});if(ticket!==modalGeneration||!dialog.open)return;body.replaceChildren();const c=card(a,true);body.append(c.root,el('p','',a.description));if(a.organization)body.append(el('p','meta',a.organization.name+(a.organization.location?' · '+a.organization.location:'')));
   if(account.role==='INTERESTED'||isMaster()){const actions=el('div','actions');if(a.status==='AVAILABLE'&&!a.liked)actions.append(button('♡ Merken',async()=>{await api('swipe',{animal_id:id,decision:'LIKE'});notice('Tier gemerkt.');await openDetails(id);}));if(a.request)body.append(el('p','status',statusNames[a.request.status]));else if(a.status==='AVAILABLE')actions.append(button('Kennenlernen anfragen',async()=>{await api('request',{animal_id:id});notice('Deine Anfrage wurde gespeichert.');await openDetails(id);}));body.append(actions);api('view',{animal_id:id,view_type:'PROFILE'}).catch(()=>{});}
 }catch(e){if(ticket===modalGeneration)body.replaceChildren(el('p','error-inline',e.message));}}
-function renderRequests(main,data){const shelter=account.role==='SHELTER'||isMaster();main.append(heading(shelter?'Zeit fürs Kennenlernen.':'Deine nächsten Begegnungen.',shelter?'Bearbeite Anfragen zu den Tieren deiner Vermittlung.':'Eine bestätigte Anfrage ist der nächste Schritt, noch keine Adoption.'));main.append(button('Aktualisieren',()=>navigate('requests',true),'secondary'));if(!data.length){empty(main,'Noch keine Anfragen.',shelter?'Sobald sich jemand kennenlernen möchte, findest du die Anfrage hier.':'Öffne ein Tierprofil und frage bewusst ein Kennenlernen an.');return;}const list=el('div');list.style.marginTop='24px';data.forEach(r=>{const row=el('article','row'),info=el('div');info.append(el('h3','',r.animal.name),el('p','meta',(shelter?r.alias+' · ':'')+new Date(r.created_at).toLocaleDateString('de-DE')),el('span','status',statusNames[r.status]));row.append(info);const actions=el('div','actions');if(!r.animal.deleted)actions.append(button('Tierprofil',()=>openDetails(r.animal.animal_id),'secondary'));else info.append(el('p','small','Tierprofil wurde gelöscht.'));if(r.status==='PENDING'){const change=async status=>{await api('requestStatus',{request_id:r.request_id,status});if(status==='APPROVED')notice('Kennenlernen bestätigt. '+r.animal.name+' ist jetzt pausiert.');await navigate('requests');};if(shelter){if(r.animal.status==='AVAILABLE')actions.append(button('Bestätigen',()=>change('APPROVED')));actions.append(button('Ablehnen',()=>change('DECLINED'),'secondary'));}else actions.append(button('Zurückziehen',()=>change('WITHDRAWN'),'secondary'));}row.append(actions);list.append(row);});main.append(list);}
+function renderRequests(main,data){const shelter=account.role==='SHELTER'||isMaster();main.append(heading(shelter?'Zeit fürs Kennenlernen.':'Deine nächsten Begegnungen.',shelter?'Bearbeite Anfragen zu den Tieren deiner Vermittlung.':'Eine bestätigte Anfrage ist der nächste Schritt, noch keine Adoption.'));main.append(button('Aktualisieren',()=>navigate('requests',true),'secondary'));if(!data.length){empty(main,'Noch keine Anfragen.',shelter?'Sobald sich jemand kennenlernen möchte, findest du die Anfrage hier.':'Öffne ein Tierprofil und frage bewusst ein Kennenlernen an.');return;}const list=el('div');list.style.marginTop='24px';requestsInOrder(data).forEach(r=>{const row=el('article','row'+(r.status==='PENDING'?' pending-request':'')),info=el('div');info.append(el('h3','',r.animal.name),el('p','meta',(shelter?r.alias+' · ':'')+new Date(r.created_at).toLocaleDateString('de-DE')),el('span','status',statusNames[r.status]));row.append(info);const actions=el('div','actions');if(!r.animal.deleted)actions.append(button('Tierprofil',()=>openDetails(r.animal.animal_id),'secondary'));else info.append(el('p','small','Tierprofil wurde gelöscht.'));if(r.status==='PENDING'){const change=async status=>{await api('requestStatus',{request_id:r.request_id,status});if(status==='APPROVED')notice('Kennenlernen bestätigt. '+r.animal.name+' ist jetzt pausiert.');await navigate('requests');};if(shelter){if(r.animal.status==='AVAILABLE')actions.append(button('Bestätigen',()=>change('APPROVED')));actions.append(button('Ablehnen',()=>change('DECLINED'),'secondary'));}else actions.append(button('Zurückziehen',()=>change('WITHDRAWN'),'secondary'));}row.append(actions);list.append(row);});main.append(list);}
 function renderProfile(main){main.append(heading('Dein Profil.','Dein Anzeigename und deine Tierpräferenzen.'));const form=el('form','panel narrow');form.innerHTML='<label for="profileAlias">Anzeigename</label><input id="profileAlias" name="alias" maxlength="60" required value="'+esc(account.alias)+'">';if(account.role==='SHELTER')form.innerHTML+='<label for="profileOrg">Name der Vermittlung</label><input id="profileOrg" name="organization_name" maxlength="100" required value="'+esc(account.organization?.name)+'"><label for="profileLocation">Ort</label><input id="profileLocation" name="location" maxlength="80" value="'+esc(account.organization?.location)+'">';else{form.append(el('label','','Diese Tierarten interessieren mich'));Object.entries(speciesNames).forEach(([key,label])=>{const l=el('label','check');l.innerHTML='<input type="checkbox" name="species" value="'+key+'" '+(account.species.includes(key)?'checked':'')+'><span>'+label+'</span>';form.append(l);});}const b=el('button','full','Profil speichern');b.type='submit';form.append(b);form.onsubmit=e=>{e.preventDefault();const fd=new FormData(form),p=Object.fromEntries(fd);p.species=account.role==='SHELTER'?account.species:fd.getAll('species');perform(b,async()=>{account=await api('saveProfile',p);navigation();notice('Profil gespeichert.');});};main.append(form,renderSettings(),button('Abmelden',logout,'logout-action'));}
 function renderSettings(){
  const settings=el('section','panel narrow settings');settings.setAttribute('aria-labelledby','settingsTitle');
@@ -183,7 +211,22 @@ function openTutorial(){
  dialog.addEventListener('close',()=>tutorialMemory.mark(owner,viewer),{once:true});render();showPhoneDialog(dialog);
 }
 let availableOrganizations=[];
-function renderShelter(main,workspace){const animals=workspace.animals;availableOrganizations=workspace.organizations||[];const h=heading(isMaster()?'Alle Tiere im Überblick.':'Deine Tiere. Ihre Chancen.','Bestand, Resonanz und Kennenlernen an einem Ort.');h.append(button('+ Tier anlegen',()=>editAnimal(null)),button('Aktualisieren',()=>navigate('shelter',true),'secondary'));main.append(h);if(!animals.length){empty(main,'Hier beginnt deine Vermittlung.','Lege dein erstes Tierprofil als Entwurf an.',button('Tier anlegen',()=>editAnimal(null)));return;}const grid=el('div','grid');animals.forEach(a=>{const c=card(a),stats=el('div','stats');[['likes','Likes'],['cards','Kartenansichten'],['profiles','Profilansichten'],['pending','Offene Anfragen']].forEach(([key,label])=>{const stat=el('div');stat.append(el('strong','',String(a.metrics[key])),el('span','',label));stats.append(stat);});c.body.append(stats,button('Tier bearbeiten',()=>editAnimal(a),'secondary'),button('Tier löschen',()=>confirmDeleteAnimal(a),'subtle delete-animal'));grid.append(c.root);});main.append(grid);}
+function renderShelter(main,workspace){
+ const animals=workspace.animals;availableOrganizations=workspace.organizations||[];
+ const h=heading(isMaster()?'Alle Tiere im Überblick.':'Deine Tierverwaltung.','Bestand und offene Aufgaben auf einen Blick.');
+ h.append(button('+ Tier anlegen',()=>editAnimal(null)),button('Aktualisieren',()=>navigate('shelter',true),'secondary'));main.append(h);
+ const pending=openRequestCount(animals),tasks=el('section','task-summary');
+ tasks.append(el('div','',pending?pending+(pending===1?' offene Anfrage':' offene Anfragen'):'Alle Anfragen bearbeitet'),el('p','small',pending?'Prüfe die Wünsche zum Kennenlernen.':'Neue Anfragen erscheinen hier, sobald sich jemand meldet.'));
+ if(pending)tasks.append(button('Anfragen bearbeiten',()=>navigate('requests'),'primary'));main.append(tasks);
+ if(!animals.length){empty(main,'Hier beginnt deine Vermittlung.','Lege dein erstes Tierprofil als Entwurf an.',button('Tier anlegen',()=>editAnimal(null)));return;}
+ main.append(availabilityFilters([['ALL','Alle'],['AVAILABLE','Verfügbar'],['PAUSED','Pausiert'],['DRAFT','Entwürfe'],['ADOPTED','Vermittelt']].map(([k,v])=>[k,v+' ('+byAvailability(animals,k).length+')']),shelterFilter,value=>{shelterFilter=value;main.replaceChildren();renderShelter(main,workspace);},'Tierbestand filtern'));
+ const visible=byAvailability(animals,shelterFilter);if(!visible.length){empty(main,'Keine Tiere in dieser Ansicht.','Wähle einen anderen Status oder zeige deinen gesamten Bestand.',button('Alle Tiere zeigen',()=>{shelterFilter='ALL';main.replaceChildren();renderShelter(main,workspace);},'secondary'));return;}
+ const grid=el('div','grid');visible.forEach(a=>{const c=card(a),stats=el('div','stats');
+ if(a.status==='PAUSED')c.body.append(el('p','pause-hint',a.has_confirmed_meeting?'Kennenlernen bestätigt · Tier pausiert':'Pausiert · kein bestätigtes Kennenlernen hinterlegt'));
+ [['likes','Likes'],['cards','Kartenansichten'],['profiles','Profilansichten'],['pending','Offene Anfragen']].forEach(([key,label])=>{const stat=el('div');stat.append(el('strong','',String(a.metrics[key])),el('span','',label));stats.append(stat);});
+ c.body.append(stats,button('Tier bearbeiten',()=>editAnimal(a),'secondary'),button('Tier löschen',()=>confirmDeleteAnimal(a),'subtle delete-animal'));grid.append(c.root);
+ });main.append(grid);
+}
 function confirmDeleteAnimal(a){
  const d=$('#detail'),body=$('#detailBody');++modalGeneration;
  $('#detailTitle').textContent='Tier löschen';body.replaceChildren(el('h2','',a.name+' löschen?'),el('p','lead','Das Tier verschwindet aus Entdecken, Likes und deiner Tierverwaltung. Offene und bestätigte Kennenlernanfragen werden geschlossen. Die bisherige Anfragehistorie bleibt erhalten.'));
