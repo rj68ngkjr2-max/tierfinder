@@ -14,11 +14,18 @@ export function installCardSwipe(card,{onDecision,disabled=()=>false}){
  card.addEventListener('pointerdown',e=>{
   if(disabled()||e.isPrimary===false||e.button!==0||e.target.closest('button,a,input,select,textarea'))return;
   gesture={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,time:e.timeStamp,velocity:0,locked:false};
+  // Touch implicitly captures the photo child. Own the pointer from the start
+  // so transferring that capture later cannot cancel an in-progress swipe.
+  card.setPointerCapture(e.pointerId);
  });
  card.addEventListener('pointermove',e=>{
   const g=gesture;if(!g||g.id!==e.pointerId)return;
   const dx=e.clientX-g.x,dy=e.clientY-g.y;
-  if(!g.locked){if(Math.hypot(dx,dy)<10)return;if(Math.abs(dy)>Math.abs(dx)){gesture=null;return;}g.locked=true;card.setPointerCapture(e.pointerId);card.classList.add('is-dragging');}
+  if(!g.locked){
+   if(Math.abs(dy)>=22&&Math.abs(dy)>Math.abs(dx)*1.35){gesture=null;release(e.pointerId);return;}
+   if(Math.abs(dx)<12||Math.abs(dx)<Math.abs(dy)*1.15)return;
+   g.locked=true;card.classList.add('is-dragging');
+  }
   e.preventDefault();const dt=e.timeStamp-g.time;if(dt>0)g.velocity=(e.clientX-g.lastX)/dt;g.lastX=e.clientX;g.time=e.timeStamp;
   const strength=Math.min(1,Math.abs(dx)/(card.clientWidth*.28));
   card.style.setProperty('--drag-x',dx+'px');card.style.setProperty('--drag-y',dy*.18+'px');card.style.setProperty('--drag-angle',Math.max(-14,Math.min(14,dx/card.clientWidth*16))+'deg');
@@ -32,7 +39,10 @@ export function installCardSwipe(card,{onDecision,disabled=()=>false}){
   card.classList.remove('is-dragging');if(decision&&!disabled())onDecision(decision);else reset();
  });
  const cancel=e=>{if(gesture?.id!==e.pointerId)return;gesture=null;release(e.pointerId);reset();};
- card.addEventListener('pointercancel',cancel);card.addEventListener('lostpointercapture',cancel);
+ card.addEventListener('pointercancel',cancel);
+ // A descendant losing its implicit touch capture bubbles here too. Only
+ // losing our own capture means that this card gesture was interrupted.
+ card.addEventListener('lostpointercapture',e=>{if(e.target===card)cancel(e);});
  return {reset,async exit(decision){
   card.classList.remove('is-dragging');card.classList.add('is-leaving');
   card.style.setProperty(decision==='LIKE'?'--like-opacity':'--pass-opacity',1);
@@ -52,6 +62,6 @@ export function installTabScrub(nav,onSelect){
  nav.addEventListener('pointermove',e=>{const g=gesture;if(!g||g.id!==e.pointerId)return;if(!g.dragged&&Math.hypot(e.clientX-g.x,e.clientY-g.y)<8)return;g.dragged=true;e.preventDefault();nav.classList.add('is-scrubbing');highlight(tabAtPoint([...nav.querySelectorAll('button[data-route]')],e.clientX,e.clientY));},{...options,passive:false});
  nav.addEventListener('pointerup',e=>{const g=gesture;if(!g||g.id!==e.pointerId)return;const target=tabAtPoint([...nav.querySelectorAll('button[data-route]')],e.clientX,e.clientY);clear();if(nav.hasPointerCapture(e.pointerId))nav.releasePointerCapture(e.pointerId);e.preventDefault();nav.dataset.suppressClickUntil=String(Date.now()+500);if(target)onSelect(target.dataset.route);},options);
  const cancel=e=>{if(gesture?.id!==e.pointerId)return;nav.dataset.suppressClickUntil=String(Date.now()+500);clear();if(nav.hasPointerCapture(e.pointerId))nav.releasePointerCapture(e.pointerId);};
- nav.addEventListener('pointercancel',cancel,options);nav.addEventListener('lostpointercapture',cancel,options);
+ nav.addEventListener('pointercancel',cancel,options);nav.addEventListener('lostpointercapture',e=>{if(e.target===nav)cancel(e);},options);
  return ()=>{if(gesture&&nav.hasPointerCapture(gesture.id))nav.releasePointerCapture(gesture.id);clear();controller.abort();};
 }

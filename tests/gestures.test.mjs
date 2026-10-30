@@ -34,3 +34,30 @@ test('tab scrubbing supports a tap, selects only on release, and cancels outside
  pointer(nav,'pointerdown',50,635);pointer(nav,'pointermove',250,635);pointer(nav,'pointercancel',250,635);assert.equal(selected.length,2);assert.equal(nav.classes.has('is-scrubbing'),false);
  assert.equal(tabAtPoint(tabs,500,635),null);cleanup();pointer(nav,'pointerdown',50,635);pointer(nav,'pointerup',50,635);assert.equal(selected.length,2);
 });
+
+test('touch capture transfer from the image does not cancel the card swipe',()=>{
+ const card=new Element(),image=new Element(),decisions=[];installCardSwipe(card,{onDecision:d=>decisions.push(d)});
+ pointer(card,'pointerdown',140,150,{pointerType:'touch'});
+ pointer(card,'pointermove',210,154,{pointerType:'touch'});
+ const transfer=new Event('lostpointercapture');Object.defineProperties(transfer,{target:{value:image},pointerId:{value:1}});card.dispatchEvent(transfer);
+ assert.equal(card.values.get('--drag-x'),'70px');assert.ok(card.classes.has('is-dragging'));
+ pointer(card,'pointermove',280,158,{pointerType:'touch'});pointer(card,'pointerup',280,158,{pointerType:'touch'});
+ assert.deepEqual(decisions,['LIKE']);assert.equal(card.capture,null);
+});
+test('a slightly diagonal touch start can become a deliberate horizontal swipe',()=>{
+ const card=new Element(),decisions=[];installCardSwipe(card,{onDecision:d=>decisions.push(d)});
+ pointer(card,'pointerdown',140,150,{pointerType:'touch'});pointer(card,'pointermove',150,162,{pointerType:'touch'});
+ pointer(card,'pointermove',270,170,{pointerType:'touch'});pointer(card,'pointerup',270,170,{pointerType:'touch'});
+ assert.deepEqual(decisions,['LIKE']);
+});
+test('touch capture lost on the card itself and touch cancellation restore without a decision',()=>{
+ for(const event of ['lostpointercapture','pointercancel']){
+  const card=new Element(),decisions=[];installCardSwipe(card,{onDecision:d=>decisions.push(d)});
+  pointer(card,'pointerdown',140,150,{pointerType:'touch'});pointer(card,'pointermove',270,155,{pointerType:'touch'});pointer(card,event,270,155,{pointerType:'touch'});pointer(card,'pointerup',270,155,{pointerType:'touch'});
+  assert.deepEqual(decisions,[]);assert.equal(card.values.has('--drag-x'),false);assert.equal(card.capture,null);
+ }
+});
+test('touch presses on action buttons stay available to their ordinary click handler',()=>{
+ const card=new Element();card.routeButton={};let count=0;installCardSwipe(card,{onDecision:()=>count++});
+ pointer(card,'pointerdown',10,10,{pointerType:'touch'});pointer(card,'pointermove',200,10,{pointerType:'touch'});pointer(card,'pointerup',200,10,{pointerType:'touch'});assert.equal(count,0);assert.equal(card.capture,null);
+});

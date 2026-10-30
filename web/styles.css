@@ -60,7 +60,7 @@ main[data-page="discover"]>.empty{margin:0;max-width:520px;width:100%;align-self
 }
 
 /* Fill the photo frame and join it to a compact, raised information panel. */
-.discover .animalcard{position:relative;touch-action:pan-y;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transform:translate3d(var(--drag-x,0px),var(--drag-y,0px),0) rotate(var(--drag-angle,0deg));transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .2s;transform-origin:50% 85%}
+.discover .animalcard{position:relative;touch-action:pinch-zoom;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transform:translate3d(var(--drag-x,0px),var(--drag-y,0px),0) rotate(var(--drag-angle,0deg));transition:transform .28s cubic-bezier(.2,.8,.2,1),box-shadow .2s;transform-origin:50% 85%}
 .discover .animal-photo img{-webkit-user-drag:none;pointer-events:none}
 .discover .card-body{position:relative;margin-top:-16px;background:#fff;border-radius:22px 22px 0 0;z-index:1;box-shadow:0 -5px 20px #172d2c08}
 .discover .animalcard.is-dragging{transition:none;box-shadow:0 18px 42px #153b3528;will-change:transform}
