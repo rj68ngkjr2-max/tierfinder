@@ -1,7 +1,7 @@
 // Only the public application shell is cached. Supabase requests and user data
 // always use the network and never enter a service-worker cache.
-const VERSION='tierfinder-shell-cb41a8b4e662';
-const ASSETS=['./','./index.html','./app.js?v=cb41a8b4e662','./styles.css?v=cb41a8b4e662','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-192.png','./icon-512.png'];
+const VERSION='tierfinder-shell-f2e6e2e6a207';
+const ASSETS=['./','./index.html','./app.js?v=f2e6e2e6a207','./styles.css?v=f2e6e2e6a207','./manifest.webmanifest','./icon.svg','./icon-180.png','./icon-192.png','./icon-512.png'];
 const STATIC=new Set(ASSETS.map(p=>new URL(p,self.registration.scope).href));
 self.addEventListener('install',event=>event.waitUntil(caches.open(VERSION).then(cache=>cache.addAll(ASSETS.map(path=>new Request(new URL(path,self.registration.scope),{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(Promise.all([caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('tierfinder-shell-')&&k!==VERSION).map(k=>caches.delete(k)))),self.clients.claim()])));
