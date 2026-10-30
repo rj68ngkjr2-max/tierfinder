@@ -25,6 +25,7 @@ before(async()=>{
  await db.exec(await readFile(new URL('../supabase/migrations/005_ai_daily_budget.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/006_animal_lifecycle.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/007_listing_context.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/008_meeting_chat.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('./fixtures/import.sql',import.meta.url),'utf8'));
  for(const [key,id] of Object.entries(ids)){
   await db.query('insert into auth.users values($1,$2,$3)',[id,key+'@example.com',JSON.stringify({alias:key,role:['shelter','other'].includes(key)?'SHELTER':'INTERESTED',consent:true,organization_name:key})]);
@@ -254,4 +255,113 @@ test('listing context includes organization location without contact details and
  const r=await rpc('user','request',{animal_id:a.animal_id});await rpc('shelter','requestStatus',{request_id:r.request_id,status:'APPROVED'});
  assert.equal((await rpc('shelter','shelterWorkspace')).animals.find(x=>x.animal_id===a.animal_id).has_confirmed_meeting,true);
  assert.equal((await rpc('other','shelterWorkspace')).animals.some(x=>x.animal_id===a.animal_id),false);
+}));
+
+async function meeting(who,action,payload={}){
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[who]||who]);
+ return (await db.query('select public.tier_meeting_rpc($1,$2) as data',[action,JSON.stringify(payload)])).rows[0].data;
+}
+async function conversation(name,approved=true){
+ await pet(name);
+ await db.query("insert into app.animal_images(image_id,animal_id,storage_path,mime_type) values($1,$2,$3,'image/jpeg')",[name+'-image',name,name+'.jpg']);
+ await db.query('update app.animals set primary_image_id=$1 where animal_id=$2',[name+'-image',name]);
+ const r=await rpc('user','request',{animal_id:name});
+ if(approved)await rpc('shelter','requestStatus',{request_id:r.request_id,status:'APPROVED'});
+ return {request_id:r.request_id};
+}
+const uuid=n=>'11111111-1111-4111-8111-'+String(n).padStart(12,'0');
+test('chat opens only on approval and excludes unrelated users, shelters and nonparticipating master admins',()=>isolated(async()=>{
+ const p=await conversation('chat-access',false);
+ assert.equal((await meeting('user','meeting',p)).can_send,false);
+ await rejects(()=>meeting('user','sendMessage',{...p,body:'Hallo',client_id:uuid(1)}),'CHAT_CLOSED');
+ for(const who of ['other','admin'])for(const action of ['meeting','sendMessage','readMeeting','cancelMeeting'])await rejects(()=>meeting(who,action,{...p,body:'Hallo',client_id:uuid(1),event_id:'1',reopen:false}),'NOT_FOUND');
+ await rpc('shelter','requestStatus',{...p,status:'APPROVED'});
+ assert.equal((await meeting('user','meeting',p)).can_send,true);
+ await meeting('user','sendMessage',{...p,body:'Hallo aus dem Test',client_id:uuid(1)});
+ const result=await meeting('shelter','meeting',p);assert.equal(result.events.at(-1).body,'Hallo aus dem Test');assert.equal(result.events.at(-1).mine,false);
+ await rejects(()=>meeting('pending','meeting',p),'APPROVAL_PENDING');
+ await rpc('admin','adminApproval',{user_id:'user',approved:false});await rejects(()=>meeting('user','meeting',p),'APPROVAL_PENDING');
+}));
+test('chat messages validate content, cannot spoof sender and retry idempotently',()=>isolated(async()=>{
+ const p=await conversation('chat-retry');
+ for(const body of ['', '   ', 'x'.repeat(2001), null, {}])await rejects(()=>meeting('user','sendMessage',{...p,body,client_id:uuid(2)}),'MESSAGE_INVALID');
+ await rejects(()=>meeting('user','sendMessage',{...p,body:'Hallo',client_id:'bad'}),'VALIDATION_ERROR');
+ const input={...p,body:' <b>Nur Text</b> ',client_id:uuid(2),sender_user_id:'shelter'};
+ const a=await meeting('user','sendMessage',input),b=await meeting('user','sendMessage',input);assert.equal(a.event_id,b.event_id);
+ const events=(await meeting('user','meeting',p)).events.filter(e=>e.kind==='MESSAGE');assert.equal(events.length,1);assert.equal(events[0].mine,true);assert.equal(events[0].body,'<b>Nur Text</b>');
+ await rejects(()=>meeting('user','sendMessage',{...input,body:'Anderer Inhalt'}),'VALIDATION_ERROR');
+}));
+test('unread notifications are personal and acknowledge only the actually observed cursor',()=>isolated(async()=>{
+ const p=await conversation('chat-unread',false);
+ const unread=async who=>(await meeting(who,'notifications')).find(x=>x.request_id===p.request_id)?.unread_count||0;
+ assert.equal(await unread('shelter'),1);assert.equal(await unread('user'),0);assert.equal(await unread('other'),0);assert.equal(await unread('admin'),0);
+ const opened=await meeting('shelter','meeting',p),cursor=opened.events.at(-1).event_id;
+ assert.equal(await unread('shelter'),1); // Fetching alone does not mark read.
+ await meeting('shelter','readMeeting',{...p,event_id:cursor});assert.equal(await unread('shelter'),0);
+ await rpc('shelter','requestStatus',{...p,status:'APPROVED'});assert.equal(await unread('user'),1);
+ const first=(await meeting('user','meeting',p)).events.at(-1).event_id;
+ await meeting('shelter','sendMessage',{...p,body:'Neue Nachricht nach dem Laden',client_id:uuid(3)});
+ await meeting('user','readMeeting',{...p,event_id:first});assert.equal(await unread('user'),1);
+ const latest=(await meeting('user','meeting',p)).events.at(-1).event_id;
+ await meeting('user','readMeeting',{...p,event_id:latest});await meeting('user','readMeeting',{...p,event_id:first});assert.equal(await unread('user'),0);
+ const foreign=await conversation('chat-foreign');const foreignId=(await meeting('user','meeting',foreign)).events.at(-1).event_id;
+ await rejects(()=>meeting('user','readMeeting',{...p,event_id:foreignId}),'VALIDATION_ERROR');
+}));
+test('only owning shelter can set meeting details; attendees receive the update',()=>isolated(async()=>{
+ const p=await conversation('chat-schedule'),time=new Date(Date.now()+86400000).toISOString(),payload={...p,meeting_at:time,place:'Treffpunkt am Eingang',notes:'Bitte zehn Minuten vorher kommen.'};
+ await rejects(()=>meeting('user','saveMeeting',payload),'FORBIDDEN');
+ await rejects(()=>meeting('shelter','saveMeeting',{...payload,meeting_at:'2020-01-01'}),'MEETING_DATE_INVALID');
+ await rejects(()=>meeting('shelter','saveMeeting',{...payload,meeting_at:'wrong'}),'VALIDATION_ERROR');
+ await meeting('shelter','saveMeeting',payload);await meeting('shelter','saveMeeting',payload);
+ const data=await meeting('user','meeting',p);assert.equal(new Date(data.meeting_at).toISOString(),time);assert.equal(data.meeting_place,payload.place);assert.equal(data.meeting_notes,payload.notes);assert.equal(data.events.filter(e=>e.kind==='MEETING').length,1);
+ assert.equal((await rpc('user','requests')).find(r=>r.request_id===p.request_id).meeting_place,payload.place);
+}));
+test('attendee cancellation closes chat but preserves history and does not reopen the animal',()=>isolated(async()=>{
+ const p=await conversation('chat-cancel');await meeting('user','sendMessage',{...p,body:'Hallo',client_id:uuid(4)});
+ await rejects(()=>meeting('user','cancelMeeting',{...p,reopen:true}),'FORBIDDEN');
+ await meeting('user','cancelMeeting',{...p,reopen:false});
+ const closed=await meeting('shelter','meeting',p);assert.equal(closed.status,'CANCELLED');assert.equal(closed.can_send,false);assert.ok(closed.events.some(e=>e.body==='Hallo'));
+ assert.equal((await rpc('shelter','details',{animal_id:'chat-cancel'})).status,'PAUSED');
+ await rejects(()=>meeting('shelter','sendMessage',{...p,body:'Neue Nachricht',client_id:uuid(5)}),'CHAT_CLOSED');
+ assert.equal(await meeting('user','cancelMeeting',{...p,reopen:false}),true);
+}));
+test('shelter cancellation can explicitly reopen only eligible animals',()=>isolated(async()=>{
+ const p=await conversation('chat-reopen');assert.equal((await meeting('shelter','meeting',p)).can_reopen,true);
+ await meeting('shelter','cancelMeeting',{...p,reopen:true});assert.equal((await rpc('shelter','details',{animal_id:'chat-reopen'})).status,'AVAILABLE');
+ const q=await conversation('chat-multiple');
+ await db.query("insert into app.requests(user_id,animal_id,status) values('admin','chat-multiple','APPROVED')");
+ assert.equal((await meeting('shelter','meeting',q)).can_reopen,false);
+ await rejects(()=>meeting('shelter','cancelMeeting',{...q,reopen:true}),'REOPEN_UNAVAILABLE');
+ await meeting('shelter','cancelMeeting',{...q,reopen:false});assert.equal((await rpc('shelter','details',{animal_id:'chat-multiple'})).status,'PAUSED');
+}));
+test('deletion and adoption retain approved chat history but prevent further sending',()=>isolated(async()=>{
+ for(const mode of ['deleted','adopted']){
+  const p=await conversation('chat-'+mode);await meeting('user','sendMessage',{...p,body:'Gespeicherter Verlauf',client_id:uuid(6)});
+  if(mode==='deleted')await rpc('shelter','deleteAnimal',{animal_id:'chat-'+mode});
+  else await rpc('shelter','saveAnimal',{animal_id:'chat-'+mode,name:'Fiktiv',species:'DOG',description:'Fiktiv',status:'ADOPTED',age_months:''});
+  const result=await meeting('user','meeting',p);assert.equal(result.can_send,false);assert.equal(result.can_cancel,false);assert.ok(result.events.some(e=>e.body==='Gespeicherter Verlauf'));
+  await rejects(()=>meeting('user','sendMessage',{...p,body:'Zu spät',client_id:uuid(7)}),'CHAT_CLOSED');
+ }
+}));
+test('conversation tables and helper functions are not accessible directly or anonymously',async()=>{
+ await db.exec('set role anon');try{await rejects(()=>db.query("select public.tier_meeting_rpc('notifications')"),'permission denied');}finally{await db.exec('reset role');}
+ await db.exec('set role authenticated');try{
+  for(const table of ['request_events','request_reads'])await rejects(()=>db.query('select * from app.'+table),'permission denied');
+  await rejects(()=>db.query('select app.meeting_participant(null,null)'),'permission denied');
+ }finally{await db.exec('reset role');}
+});
+test('chat history is paginated without gaps and notification counts exclude own messages',()=>isolated(async()=>{
+ const p=await conversation('chat-pages');
+ await db.query("insert into app.request_events(request_id,sender_user_id,kind,body) select $1,'shelter','MESSAGE','Beitrag '||n from generate_series(1,60) n",[p.request_id]);
+ const last=await meeting('user','meeting',p);assert.equal(last.events.length,50);assert.equal(last.has_older,true);assert.equal(last.events.at(-1).body,'Beitrag 60');
+ const older=await meeting('user','meeting',{...p,before:last.events[0].event_id});assert.equal(older.events.length,12);assert.equal(older.has_older,false);
+ assert.equal(new Set([...older.events,...last.events].map(e=>e.event_id)).size,62);
+ assert.equal((await meeting('user','notifications')).find(r=>r.request_id===p.request_id).unread_count,61);
+ assert.equal((await meeting('shelter','notifications')).find(r=>r.request_id===p.request_id).unread_count,1);
+}));
+test('message rate limit bounds new messages while accepted-message retries remain idempotent',()=>isolated(async()=>{
+ const p=await conversation('chat-rate');
+ for(let n=100;n<130;n++)await meeting('user','sendMessage',{...p,body:'Test '+n,client_id:uuid(n)});
+ await rejects(()=>meeting('user','sendMessage',{...p,body:'Zu viele',client_id:uuid(130)}),'RATE_LIMIT');
+ assert.ok((await meeting('user','sendMessage',{...p,body:'Test 100',client_id:uuid(100)})).event_id);
 }));

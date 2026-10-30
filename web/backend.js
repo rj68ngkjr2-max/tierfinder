@@ -59,7 +59,8 @@ export const backend={
     const path=org+'/'+crypto.randomUUID()+(payload.upload.mime_type==='image/png'?'.png':'.jpg');
     const {error}=await db.storage.from('animal-images').upload(path,bytes,{contentType:payload.upload.mime_type,upsert:false,cacheControl:'300'});if(error)throw error;
     const {upload,...fields}=payload;result=await query('saveAnimal',{...fields,storage_path:path});
-   }else result=await query(action,payload);
+   }else if(['notifications','meeting','readMeeting','sendMessage','saveMeeting','cancelMeeting'].includes(action)){const {data,error}=await db.rpc('tier_meeting_rpc',{action,payload});if(error)throw error;result=data;}
+   else result=await query(action,payload);
    return {ok:true,data:result};
   }catch(e){return failure(e);}
  }

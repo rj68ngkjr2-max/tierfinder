@@ -29,6 +29,14 @@ Entdecken behält innerhalb der Sitzung die Reihenfolge beim Tabwechsel. Beim er
 
 Die Merkliste zeigt kompakte Karten mit Ort der Vermittlung und Status sowie einen Filter für verfügbare Tiere. Die Tierverwaltung bietet Statusfilter und einen direkten Einstieg zu offenen Anfragen. Bei pausierten Tieren zeigt sie an, ob ein bestätigtes Kennenlernen hinterlegt ist. Migration `007_listing_context.sql` ergänzt diese Angaben ohne Änderung von Tierdaten oder Zugriffsrechten.
 
+## Kennenlernen und Chat
+
+Bestätigte Kennenlernanfragen enthalten einen privaten Textchat für die anfragende Person und Konten der zuständigen Vermittlung. Ein fremdes Administratorkonto bekommt keinen Zugriff auf Nachrichten. Die Vermittlung pflegt Termin (lokale Anzeige), Treffpunkt und Hinweise. Beide Beteiligten können das Kennenlernen absagen. Nur die Vermittlung kann dabei ausdrücklich ein geeignetes pausiertes Tier ohne weiteres bestätigtes Kennenlernen wieder verfügbar machen. Nach Absage, Löschung oder Vermittlung bleibt der Verlauf lesbar, neue Nachrichten sind gesperrt.
+
+Rote Punkte am bestehenden Tab „Anfragen“ und „Neu“ an den betroffenen Einträgen kennzeichnen neue Anfragen, Statusänderungen, Terminänderungen und Nachrichten. Lesestände werden je Konto in der Datenbank gespeichert und bestätigen nur bereits angezeigte Beiträge. Die sichtbare App prüft neue Aktivität alle 20 Sekunden, ein geöffneter Chat alle 5 Sekunden; im Hintergrund pausieren die Abfragen. Es gibt keinen zusätzlichen Navigationstab und keine E-Mail- oder Push-Nachrichten.
+
+Migration `008_meeting_chat.sql` ergänzt private Tabellen mit gesperrtem Direktzugriff und den authentifizierten Endpunkt `tier_meeting_rpc`. Jede Aktion prüft Freigabe und Beteiligung erneut. Nachrichten haben höchstens 2.000 Zeichen; eindeutige Sende-IDs vermeiden Duplikate bei Wiederholung. Neue Nachrichten sind auf 30 pro Minute und Konto begrenzt. Der Verlauf lädt jeweils 50 Beiträge mit einer Funktion für ältere Beiträge. Bereits offene Anfragen und Bestätigungen erhalten einmalig einen passenden Aktivitätseintrag. Lesestände und Chattexte werden nicht im Browser dauerhaft gespeichert.
+
 ## Technik
 
 - `web/`: HTML, CSS, Client und Supabase-Anbindung.

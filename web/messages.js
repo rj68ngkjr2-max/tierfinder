@@ -1,4 +1,8 @@
 export const messages={
+  CHAT_CLOSED:'Dieser Chat ist noch nicht geöffnet oder inzwischen geschlossen. Bitte aktualisiere die Anfrage.',
+  MESSAGE_INVALID:'Bitte schreibe eine Nachricht mit 1 bis 2.000 Zeichen.',
+  MEETING_DATE_INVALID:'Bitte wähle einen zukünftigen Termin innerhalb der nächsten zwei Jahre.',
+  REOPEN_UNAVAILABLE:'Das Tier kann gerade nicht wieder freigegeben werden. Prüfe andere bestätigte Kennenlernen und die Tierverwaltung.',
   RESET_INVALID:'Dieser Link ist ungültig, abgelaufen oder bereits verwendet. Bitte fordere beim Administrator einen neuen Link an.',
   SELF_LOCK:'Du kannst dein eigenes Administratorkonto hier nicht sperren.',
   EMAIL_INVALID:'Bitte gib eine gültige E-Mail-Adresse ein.',
