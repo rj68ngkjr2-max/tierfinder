@@ -8,6 +8,12 @@ Mobile Tiervermittlungs-Demo für ein Hochschulprojekt. Die Oberfläche läuft a
 
 Die veröffentlichte Seite in Safari öffnen, das Teilen-Menü auswählen und **Zum Home-Bildschirm** hinzufügen. Das App-Icon startet die Oberfläche ohne simulierten Handyrahmen. Safe Areas, große Bedienelemente und eine Navigation mit maximal fünf Tabs berücksichtigen die mobile Nutzung. Auch im normalen Browser lässt sich die App verwenden. Mit **Angemeldet bleiben** wird die Supabase-Sitzung auf Wunsch im lokalen Browserspeicher behalten; sonst nur im aktuellen Tab. Abmelden entfernt die gespeicherte Sitzung. Passwörter speichert die App nicht; das Login unterstützt das Ausfüllen durch den Passwortmanager.
 
+## Einstellungen und Einführung
+
+Unter **Profil → Einstellungen** stehen **Hell**, **Dunkel** und **System** zur Auswahl. Die Darstellung wird auf diesem Gerät gespeichert und gilt auch für Formulare und Dialoge. System folgt Änderungen der Geräteeinstellung. Ein kleines Skript setzt die Darstellung vor dem ersten Zeichnen der Seite.
+
+Die rollenabhängige Einführung erscheint beim ersten Einstieg pro Konto und Rolle auf diesem Gerät. Sie ist jederzeit überspringbar und über **Tutorial erneut starten** wieder aufrufbar. Die Einführung verändert keine Tiere, Likes oder Anfragen. Abschließen und Überspringen werden lokal gespeichert. Bei gesperrtem Browserspeicher gelten Einstellungen nur während des aktuellen Seitenaufrufs.
+
 ## Funktionen und Regeln
 
 - Interessierte entdecken Tiere anhand ihrer Tierartpräferenzen, merken sie und fragen ein Kennenlernen an.

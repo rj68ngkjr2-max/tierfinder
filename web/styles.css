@@ -84,3 +84,44 @@ main[data-page="discover"]>.empty{margin:0;max-width:520px;width:100%;align-self
 .undo-skip{flex:0 0 44px;padding:4px;font-size:23px;color:var(--green);border:0;border-radius:13px;background:#ffffffb8}.delete-animal{color:var(--red)!important}
 
 .preference-summary{align-items:center}.preference-labels{display:flex;flex:1;min-width:0;flex-wrap:wrap;gap:3px 8px;padding:0 4px}.preference-label{font-size:12px;font-weight:650;color:var(--green)}.preference-edit{flex:0 0 auto;padding:8px;font-size:12px}
+
+/* Settings and a self-contained, non-mutating introduction. */
+.settings{margin-top:24px}.settings h2{margin-bottom:20px}.appearance-options{border:0;padding:0;margin:0 0 14px;display:flex;gap:8px}.appearance-options legend{font-size:14px;font-weight:650;margin-bottom:10px}.appearance-option{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;min-height:48px;padding:9px 7px;margin:0;border:1px solid var(--line);border-radius:14px;background:var(--paper)}.appearance-option:has(:checked){border-color:var(--green);background:var(--lime);color:var(--green)}.appearance-option input[type=radio]{width:17px;min-width:17px;min-height:17px;height:17px;padding:0;margin:0;accent-color:var(--green)}.tutorial-restart{width:100%}.settings>p{margin-bottom:18px}
+#tutorial .dialog-toolbar button{width:auto;height:auto;min-height:44px;padding:8px 12px;border-radius:14px;font-size:14px;color:var(--green);background:transparent}
+#tutorial .dialog-content{padding-top:16px}#tutorial h2:focus{outline:none}.tutorial-progress{margin-bottom:16px}.tutorial-visual{display:grid;place-items:center;width:76px;height:76px;border-radius:24px;background:var(--lime);color:var(--green);margin-bottom:20px}.tutorial-visual svg{width:38px;height:38px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.tutorial-example{padding:18px;border-radius:18px;background:var(--paper);border:1px solid var(--line);margin-top:20px}.tutorial-example strong{display:block;font-size:15px}.tutorial-example p{font-size:14px;line-height:1.6;color:var(--muted);margin:8px 0 0}.tutorial-actions{margin-top:22px}.tutorial-actions button{flex:1}.tutorial-actions .primary{background:var(--green);color:white}
+@media(max-height:650px){.tutorial-visual{width:48px;height:48px;margin-bottom:12px;border-radius:16px}.tutorial-visual svg{width:28px;height:28px}.tutorial-example{margin-top:12px;padding:12px}.tutorial-actions{margin-top:14px}}
+
+/* Dark colors preserve the existing layout, safe areas and gesture surfaces. */
+:root[data-theme=dark]{color-scheme:dark;--ink:#edf5f2;--muted:#b0c5bd;--line:#3c524b;--paper:#101b1b;--green:#78dfc1;--lime:#243e35;--red:#ffb4b8;--surface:#1b2b29;--raised:#293e37}
+[data-theme=dark] .app{background:radial-gradient(ellipse at 0 0,#1b3530,transparent 62%),radial-gradient(ellipse at 100% 0,#1c293d,transparent 55%),var(--paper)}
+[data-theme=dark] button,[data-theme=dark] button.secondary,[data-theme=dark] .animalcard,[data-theme=dark] .discover .card-body{background:var(--surface)}
+[data-theme=dark] button.full,[data-theme=dark] button.primary,[data-theme=dark] .tutorial-actions .primary{background:var(--green);border-color:var(--green);color:#102820}
+[data-theme=dark] button.subtle{background:transparent}
+[data-theme=dark] button.danger,[data-theme=dark] .field-error{background:#49272b;color:var(--red)}
+[data-theme=dark] #identity .account-avatar{background:#293e37bd;border-color:var(--line)}
+[data-theme=dark] .panel,[data-theme=dark] .row,[data-theme=dark] .more-list{background:#1b2b29ed;border-color:var(--line)}
+[data-theme=dark] .tabs,[data-theme=dark] .filters{background:#203630}
+[data-theme=dark] .tabs button,[data-theme=dark] .chip.selected,[data-theme=dark] .undo-skip{background:var(--raised);color:var(--green)}
+[data-theme=dark] .tabs button.secondary{background:transparent;color:var(--muted)}
+[data-theme=dark] input:not([type=checkbox]):not([type=radio]),[data-theme=dark] select,[data-theme=dark] textarea{background:#122320}
+[data-theme=dark] .success-inline{background:#243e35;color:#b4ebcc}
+[data-theme=dark] .animal-photo{background:linear-gradient(145deg,#263e36,#29384a)}
+[data-theme=dark] .placeholder{color:var(--muted)}
+[data-theme=dark] .tag,[data-theme=dark] .status{color:#a7e4ca}
+[data-theme=dark] .empty{background:#1b2b2980;border-color:#526e61}
+[data-theme=dark] #nav{background:linear-gradient(145deg,#263c35ed,#152724ed);border-color:#577568;box-shadow:0 8px 28px #0005,inset 0 1px 0 #ffffff12}
+[data-theme=dark] #nav button,[data-theme=dark] #nav.is-scrubbing button{color:var(--muted);background:transparent}
+[data-theme=dark] #nav button.active,[data-theme=dark] #nav::before{background:var(--raised);color:var(--green)}
+[data-theme=dark] #nav.is-scrubbing button.active{background:transparent}
+[data-theme=dark] #nav.is-scrubbing button.scrub-target{color:var(--green)}
+[data-theme=dark] .more-row{background:transparent}[data-theme=dark] .more-icon{background:var(--lime)}
+[data-theme=dark] .logout-action{background:#332c29;color:#f5bcb0;border-color:#715248}
+[data-theme=dark] .app>dialog{background:var(--surface);border-color:var(--line)}
+[data-theme=dark] .dialog-toolbar{background:#20342f}
+[data-theme=dark] .dialog-toolbar button{background:var(--raised);color:var(--ink)}
+[data-theme=dark] .app-overlay{background:#020908a8}
+[data-theme=dark] .ai-panel .ai-preview{background:var(--raised)}
+[data-theme=dark] .swipe-badges span{background:#1b2b29ed}[data-theme=dark] .swipe-like{color:var(--green)}[data-theme=dark] .swipe-pass{color:var(--red)}
+[data-theme=dark] #notice{background:#bdebdc;color:#102820}[data-theme=dark] #notice.error{background:#ffb4ab;color:#3d1612}
+@media(prefers-reduced-transparency:reduce){[data-theme=dark] #nav,[data-theme=dark] .panel,[data-theme=dark] .more-list,[data-theme=dark] .row{background:var(--surface)}}
+@media(prefers-contrast:more){:root[data-theme=dark]{--muted:#d0e6dc;--line:#829b8f}[data-theme=dark] #nav,[data-theme=dark] .panel,[data-theme=dark] .row,[data-theme=dark] .more-list{border-color:var(--line)}}
