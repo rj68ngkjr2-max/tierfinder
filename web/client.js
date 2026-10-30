@@ -1,5 +1,5 @@
 import {backend} from './backend.js';
-import {shuffleAnimals} from './discover.js';
+import {shuffleAnimals,preferredAnimals} from './discover.js';
 import {installCardSwipe,installTabScrub} from './gestures.js';
 import {installStandaloneLayout} from './standalone-layout.js';
 installStandaloneLayout();
@@ -107,21 +107,28 @@ async function navigate(next,fresh=false){if(!account)return authScreen();page=n
   let data;if(next==='discover')data=shuffleAnimals(await api('discover',{}, {fresh}));if(next==='likes')data=await api('likes',{}, {fresh});if(next==='requests')data=await api('requests',{}, {fresh});if(next==='shelter')data=await api('shelterWorkspace',{}, {fresh});if(next==='admin')data=await api('adminAccounts',{}, {fresh});
   if(ticket!==generation)return;main.replaceChildren();({discover:renderDiscover,likes:renderLikes,requests:renderRequests,shelter:renderShelter,profile:renderProfile,ai:renderAi,admin:renderAdmin,more:renderMore})[next](main,data);main.focus({preventScroll:true});
 }catch(e){if(ticket===generation){main.replaceChildren();empty(main,'Gerade nicht erreichbar',e.message,button('Erneut versuchen',()=>navigate(next)));}}}
-function filters(){const group=el('div','filters');Object.entries(speciesNames).forEach(([key,label])=>{const selected=account.species.includes(key),b=button(label,async()=>{
-  const next=account.species.includes(key)?account.species.filter(x=>x!==key):account.species.concat(key);account=await api('saveProfile',{alias:account.alias,species:next});await navigate('discover');},'chip'+(selected?' selected':''));b.setAttribute('aria-pressed',selected);group.append(b);});return group;}
+function filters(){
+ const group=el('div','filters preference-summary');group.setAttribute('aria-label','Deine Tierpräferenzen');
+ const labels=el('div','preference-labels');
+ Object.entries(speciesNames).filter(([key])=>account.species.includes(key)).forEach(([,label])=>labels.append(el('span','preference-label',label)));
+ if(!account.species.length)labels.append(el('span','small','Keine Tierart gewählt'));
+ const edit=button('Ändern',()=>navigate('profile'),'subtle preference-edit');edit.setAttribute('aria-label','Tierpräferenzen im Profil ändern');
+ group.append(labels,edit);return group;
+}
 function renderDiscover(main,animals){
+  animals=preferredAnimals(animals,account.species);
   let deciding=false;const ticket=generation,toolbar=filters();
   const undo=button('↶',async()=>{
    if(deciding)return;deciding=true;main.querySelectorAll('button').forEach(b=>b.disabled=true);
    try{const restored=await api('undoPass');
     if(ticket!==generation||!undo.isConnected)return;
-    if(!restored){notice('Kein übersprungenes Tier in deiner aktuellen Auswahl verfügbar.');return;}
+    if(!restored||!preferredAnimals([restored],account.species).length){notice('Kein übersprungenes Tier in deiner aktuellen Auswahl verfügbar.');return;}
     animals=[restored,...animals.filter(a=>a.animal_id!==restored.animal_id)];
     main.replaceChildren();renderDiscover(main,animals);notice(restored.name+' ist wieder da.');
    }finally{deciding=false;if(undo.isConnected)main.querySelectorAll('button').forEach(b=>b.disabled=false);}
   },'undo-skip');
   undo.innerHTML='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10h5M3 10V5M3 10a8 8 0 1 1 1 8"/></svg>';undo.title='Zuletzt übersprungenes Tier zurückholen';undo.setAttribute('aria-label','Überspringen rückgängig machen');toolbar.prepend(undo);main.append(toolbar);
-  if(!animals.length){empty(main,account.species.length?'Für heute alle kennengelernt.':'Welche Tiere möchtest du entdecken?',account.species.length?'Ändere deine Auswahl oder entdecke übersprungene Tiere erneut. Deine Likes bleiben gemerkt.':'Wähle oben mindestens eine Tierart aus.',account.species.length?button('Übersprungene erneut ansehen',async()=>{await api('resetPasses');await navigate('discover');},'secondary'):null);return;}
+  if(!animals.length){empty(main,account.species.length?'Für heute alle kennengelernt.':'Welche Tiere möchtest du entdecken?',account.species.length?'Ändere deine Auswahl oder entdecke übersprungene Tiere erneut. Deine Likes bleiben gemerkt.':'Wähle in deinem Profil mindestens eine Tierart aus.',account.species.length?button('Übersprungene erneut ansehen',async()=>{await api('resetPasses');await navigate('discover');},'secondary'):null);return;}
   const a=animals[0],wrap=el('div','discover'),left=el('div','discover-stack'),c=card(a);const actions=el('div','actions');
   async function decide(d){
    if(deciding)return;deciding=true;toolbar.querySelectorAll('button').forEach(b=>b.disabled=true);c.root.setAttribute('aria-busy','true');c.root.querySelectorAll('button').forEach(b=>b.disabled=true);

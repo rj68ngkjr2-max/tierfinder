@@ -4,3 +4,9 @@ export function shuffleAnimals(animals,random=Math.random){
  for(let i=deck.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
  return deck;
 }
+
+// Apply the current profile even to a deck loaded before a preference change.
+export function preferredAnimals(animals,species=[]){
+ const preferred=new Set(species);
+ return animals.filter(animal=>preferred.has(animal.species));
+}

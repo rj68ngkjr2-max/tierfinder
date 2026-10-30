@@ -229,3 +229,18 @@ test('deletion is owner-only, idempotent and hides listing and images while reta
  await rejects(()=>rpc('shelter','saveAnimal',{animal_id:'delete-me',status:'AVAILABLE'}),'NOT_FOUND');
  assert.equal((await db.query("select count(*)::int as n from app.animals where animal_id='delete-me' and deleted_at is not null")).rows[0].n,1);
 }));
+
+test('discover follows saved preferences across all species, reset and bootstrap',()=>isolated(async()=>{
+ for(const species of ['DOG','CAT','BIRD','RABBIT'])await pet('preferences-'+species,species);
+ for(const species of [['CAT'],['BIRD','RABBIT'],[]]){
+  await rpc('user','saveProfile',{alias:'Demo',species});
+  await rpc('user','resetPasses');
+  const deck=await rpc('user','discover');
+  assert.ok(deck.every(a=>species.includes(a.species)));
+  for(const selected of species)assert.ok(deck.some(a=>a.animal_id==='preferences-'+selected));
+  const boot=await rpc('user','bootstrap');
+  assert.deepEqual([...boot.account.species].sort(),[...species].sort());
+  assert.ok(boot.views.discover.every(a=>species.includes(a.species)));
+  if(!species.length)assert.deepEqual(deck,[]);
+ }
+}));
